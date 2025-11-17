@@ -55,6 +55,10 @@ datatype Error = UnknownRegister | UninitializedRegister | RegisterOverride
   | NotAnAddress | IncompatibleTypes
 datatype 'a Result = Ok 'a | Err Error
 
+fun isOk :: "'a Result \<Rightarrow> bool" where
+  "isOk (Ok _) = True"
+| "isOk (Err _) = False"
+
 
 type_synonym Registers = "(LLVMRegisterName * LLVMValue) list"
 type_synonym Stack = "LLVMValue list"
@@ -63,50 +67,130 @@ type_synonym Memory = "LLVMValue list"
 type_synonym State = "Registers * Stack * Memory"
 
 
-fun getRegister :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue Result" where
-  "getRegister [] _ = Err UnknownRegister"
-| "getRegister ((n, v)#r) n' = (if n = n' then Ok v else getRegister r n')"
+(* Register functions and lemmas *)
+fun get_register :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue Result" where
+  "get_register [] _ = Err UnknownRegister"
+| "get_register ((n, v)#r) n' = (if n = n' then Ok v else get_register r n')"
 
-definition setRegister :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue \<Rightarrow> Registers Result" where
-  "setRegister r n v = (case getRegister r n of
+definition set_register :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue \<Rightarrow> Registers Result" where
+  "set_register r n v = (case get_register r n of
     (Ok _) \<Rightarrow> Err RegisterOverride |
     _ \<Rightarrow> Ok ((n,v)#r))"
 
-fun getValue :: "Registers \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMValue Result" where
-  "getValue _ (val v) = Ok v" |
-  "getValue r (reg n) = getRegister r n"
+fun get_value :: "Registers \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMValue Result" where
+  "get_value _ (val v) = Ok v" |
+  "get_value r (reg n) = get_register r n"
 
 
-fun allocateStack :: "Stack \<Rightarrow> (Stack * LLVMStackAddress)" where
-  "allocateStack [] = ([unset], 0)" |
-  "allocateStack (x#xs) = (let (s, a) = allocateStack xs in (x#s, Suc a))"
+lemma set_unknown_register: "get_register r n = Err UnknownRegister \<longrightarrow> Ok r' = set_register r n v \<longrightarrow> get_register r' n = Ok v"
+  using set_register_def by auto
 
-fun getStack :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> LLVMValue Result" where
-  "getStack [] _ = Err UnallocatedStackAddress" |
-  "getStack (x#_) 0 = Ok x" |
-  "getStack (_#xs) (Suc a) = getStack xs a"
+lemma override_register: "get_register r n = Ok v \<longrightarrow> set_register r n v' = Err RegisterOverride"
+  using set_register_def by simp
 
-fun setStack :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> LLVMValue \<Rightarrow> Stack Result" where
-  "setStack [] _ _ = Err UnallocatedStackAddress" |
-  "setStack (_#s) 0 v = Ok (v#s)" |
-  "setStack (x#xs) (Suc n) v = (case (setStack xs n v) of
+lemma set_set_unknown_register: "get_register r n = Err UnknownRegister \<longrightarrow> Ok r' = set_register r n v \<longrightarrow> set_register r' n v' = Err RegisterOverride"
+  using set_unknown_register override_register by simp
+
+lemma get_value_register: "get_register r n = Ok v \<longrightarrow> get_value r (reg n) = Ok v"
+  by simp
+
+
+(* Stack functions and lemmas *)
+definition allocate_stack :: "Stack \<Rightarrow> (Stack * LLVMStackAddress)" where
+  "allocate_stack s = (s@[unset], length s)"
+
+definition valid_stack_address :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> bool" where
+  "valid_stack_address s a = (a < length s)"
+
+fun get_stack :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> LLVMValue Result" where
+  "get_stack [] _ = Err UnallocatedStackAddress" |
+  "get_stack (x#_) 0 = Ok x" |
+  "get_stack (_#xs) (Suc a) = get_stack xs a"
+
+fun set_stack :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> LLVMValue \<Rightarrow> Stack Result" where
+  "set_stack [] _ _ = Err UnallocatedStackAddress" |
+  "set_stack (_#s) 0 v = Ok (v#s)" |
+  "set_stack (x#xs) (Suc n) v = (case (set_stack xs n v) of
     (Err e) \<Rightarrow> Err e |
     (Ok s) \<Rightarrow> Ok (x#s))"
 
+lemma stack_allocate_append_unset: "(s', i) = allocate_stack s \<longrightarrow> s' = s@[unset]"
+  using allocate_stack_def by simp
 
-fun allocateMemory :: "Memory \<Rightarrow> (Memory * LLVMMemoryAddress)" where
-  "allocateMemory [] = ([unset], 0)" |
-  "allocateMemory (x#xs) = (let (s, a) = allocateMemory xs in (x#s, Suc a))"
+lemma stack_allocate_len: "(s', i) = allocate_stack s \<longrightarrow> length s' = length s + 1"
+  using allocate_stack_def by simp
 
-fun getMemory :: "Memory \<Rightarrow> LLVMMemoryAddress \<Rightarrow> LLVMValue Result" where
-  "getMemory [] _ = Err UnallocatedMemoryAddress" |
-  "getMemory (x#_) 0 = Ok x" |
-  "getMemory (_#xs) (Suc a) = getMemory xs a"
+lemma stack_allocate_index_unset: "(s', i) = allocate_stack s \<longrightarrow> s'!i = unset"
+  using allocate_stack_def by simp
 
-fun setMemory :: "Memory \<Rightarrow> LLVMMemoryAddress \<Rightarrow> LLVMValue \<Rightarrow> Memory Result" where
-  "setMemory [] _ _ = Err UnallocatedMemoryAddress" |
-  "setMemory (_#s) 0 v = Ok (v#s)" |
-  "setMemory (x#xs) (Suc n) v = (case (setMemory xs n v) of
+lemma stack_get_eq_index: "i < length s \<longrightarrow> get_stack s i = Ok (s!i)"
+  by (induct rule: get_stack.induct; simp)
+
+lemma stack_allocate_get_unset: "(s', i) = allocate_stack s \<longrightarrow> get_stack s' i = Ok unset"
+  using allocate_stack_def stack_get_eq_index by simp
+
+lemma stack_set_unallocated: "i \<ge> length s \<longrightarrow> set_stack s i v = Err UnallocatedStackAddress"
+  by (induct rule: set_stack.induct; simp)
+
+lemma stack_set_ok: "i < length s \<longrightarrow> s' = set_stack s i v \<longrightarrow> isOk s'"
+proof (induct rule: set_stack.induct)
+  case (1 uu uv)
+  then show ?case by simp
+next
+  case (2 uw s v)
+  then show ?case by simp
+next
+  case (3 x xs n v)
+  then show ?case by (cases "set_stack xs n v"; simp)
+qed
+
+lemma aaaa: "i < length s \<longrightarrow> Suc i < length (a#s)" by simp
+lemma aaab: "Suc i < length (a#s) \<longrightarrow> i < length s" by simp
+
+lemma stack_set_len: "i < length s \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> length s = length s'"
+proof (induct s)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons a s)
+  then show ?case proof (induct i)
+    case 0
+    then show ?case by simp
+  next
+    case (Suc i)
+    then have "length s = i" using Suc Cons try sorry
+    then show ?case try0 sorry
+  qed
+qed
+
+
+lemma stack_get_set: "i < length s \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> get_stack s' i = Ok v"
+proof (induct rule: get_stack.induct)
+  case (1 uu)
+  then show ?case sorry
+next
+  case (2 x uv)
+  then show ?case sorry
+next
+  case (3 uw xs a)
+  then show ?case sorry
+qed
+
+
+
+fun allocate_memory :: "Memory \<Rightarrow> (Memory * LLVMMemoryAddress)" where
+  "allocate_memory [] = ([unset], 0)" |
+  "allocate_memory (x#xs) = (let (s, a) = allocate_memory xs in (x#s, Suc a))"
+
+fun get_memory :: "Memory \<Rightarrow> LLVMMemoryAddress \<Rightarrow> LLVMValue Result" where
+  "get_memory [] _ = Err UnallocatedMemoryAddress" |
+  "get_memory (x#_) 0 = Ok x" |
+  "get_memory (_#xs) (Suc a) = get_memory xs a"
+
+fun set_memory :: "Memory \<Rightarrow> LLVMMemoryAddress \<Rightarrow> LLVMValue \<Rightarrow> Memory Result" where
+  "set_memory [] _ _ = Err UnallocatedMemoryAddress" |
+  "set_memory (_#s) 0 v = Ok (v#s)" |
+  "set_memory (x#xs) (Suc n) v = (case (set_memory xs n v) of
     (Err e) \<Rightarrow> Err e |
     (Ok s) \<Rightarrow> Ok (x#s))"
 
@@ -115,39 +199,39 @@ fun setMemory :: "Memory \<Rightarrow> LLVMMemoryAddress \<Rightarrow> LLVMValue
 subsection "Executors"
 
 (* Store instruction helpers *)
-fun storeValueToStackOrMemory :: "Registers \<Rightarrow> Stack \<Rightarrow> Memory \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue \<Rightarrow> State Result" where
-  "storeValueToStackOrMemory r s m (vsaddr a) value =
-      (case setStack s a value of Ok s' \<Rightarrow> Ok (r, s', m) | Err e \<Rightarrow> Err e)"
-| "storeValueToStackOrMemory r s m (vmaddr a) value =
-      (case setMemory m a value of Ok m' \<Rightarrow> Ok (r, s, m') | Err e \<Rightarrow> Err e)"
-| "storeValueToStackOrMemory _ _ _ _ _ = Err NotAnAddress"
+fun store_val_to_stack_or_mem :: "Registers \<Rightarrow> Stack \<Rightarrow> Memory \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue \<Rightarrow> State Result" where
+  "store_val_to_stack_or_mem r s m (vsaddr a) value =
+      (case set_stack s a value of Ok s' \<Rightarrow> Ok (r, s', m) | Err e \<Rightarrow> Err e)"
+| "store_val_to_stack_or_mem r s m (vmaddr a) value =
+      (case set_memory m a value of Ok m' \<Rightarrow> Ok (r, s, m') | Err e \<Rightarrow> Err e)"
+| "store_val_to_stack_or_mem _ _ _ _ _ = Err NotAnAddress"
 
-fun storeValue :: "State \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMPointer \<Rightarrow> State Result" where
-  "storeValue (r, s, m) v (ptr p) =
-   (case getValue r p of
+fun store_value :: "State \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMPointer \<Rightarrow> State Result" where
+  "store_value (r, s, m) v (ptr p) =
+   (case get_value r p of
       Err e \<Rightarrow> Err e
     | Ok a \<Rightarrow>
-        (case getValue r v of
+        (case get_value r v of
            Err e \<Rightarrow> Err e
-         | Ok value \<Rightarrow> storeValueToStackOrMemory r s m a value))"
+         | Ok value \<Rightarrow> store_val_to_stack_or_mem r s m a value))"
 
 
 (* Load instruction helpers *)
-fun loadValueFromStackOrMemory :: "Stack \<Rightarrow> Memory \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue Result" where
-  "loadValueFromStackOrMemory s m (vsaddr a) =
-    (case getStack s a of Ok unset \<Rightarrow> Err UninitializedStackAddress | Ok v \<Rightarrow> Ok v | Err e \<Rightarrow> Err e)"
-| "loadValueFromStackOrMemory s m (vmaddr a) =
-    (case getMemory s a of Ok unset \<Rightarrow> Err UninitializedMemoryAddress | Ok v \<Rightarrow> Ok v | Err e \<Rightarrow> Err e)"
-| "loadValueFromStackOrMemory _ _ _ = Err NotAnAddress"
+fun load_val_from_stack_or_mem :: "Stack \<Rightarrow> Memory \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue Result" where
+  "load_val_from_stack_or_mem s m (vsaddr a) =
+    (case get_stack s a of Ok unset \<Rightarrow> Err UninitializedStackAddress | Ok v \<Rightarrow> Ok v | Err e \<Rightarrow> Err e)"
+| "load_val_from_stack_or_mem s m (vmaddr a) =
+    (case get_memory s a of Ok unset \<Rightarrow> Err UninitializedMemoryAddress | Ok v \<Rightarrow> Ok v | Err e \<Rightarrow> Err e)"
+| "load_val_from_stack_or_mem _ _ _ = Err NotAnAddress"
 
-fun loadValue :: "State \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMPointer \<Rightarrow> State Result" where
-  "loadValue (r, s, m) n (ptr p) =
-    (case getValue r p of
+fun load_value :: "State \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMPointer \<Rightarrow> State Result" where
+  "load_value (r, s, m) n (ptr p) =
+    (case get_value r p of
       Ok a \<Rightarrow>
-        (case loadValueFromStackOrMemory s m a of
+        (case load_val_from_stack_or_mem s m a of
           Err e \<Rightarrow> Err e
         | Ok v \<Rightarrow>
-          (case setRegister r n v of
+          (case set_register r n v of
             Err e \<Rightarrow> Err e
           | Ok r' \<Rightarrow> Ok (r', s, m)))
     | Err e \<Rightarrow> Err e)"
@@ -166,8 +250,8 @@ fun unsigned_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" wher
 fun signed_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
   "signed_overflow64 a b = (sint a + sint b \<noteq> sint (a + b))"
 
-fun addValues :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue Result" where
-  "addValues wrap (vi32 a) (vi32 b) = (
+fun add_values :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue Result" where
+  "add_values wrap (vi32 a) (vi32 b) = (
       let uov = unsigned_overflow32 a b;
           sov = signed_overflow32 a b
       in case wrap of
@@ -177,7 +261,7 @@ fun addValues :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMVa
          | AddNoUnsignedSignedWrap \<Rightarrow>
                (if uov \<or> sov then Ok poison else Ok (vi32 (a + b)))
      )"
-| "addValues wrap (vi64 a) (vi64 b) = (
+| "add_values wrap (vi64 a) (vi64 b) = (
       let uov = unsigned_overflow64 a b;
           sov = signed_overflow64 a b
       in case wrap of
@@ -187,63 +271,63 @@ fun addValues :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMVa
          | AddNoUnsignedSignedWrap \<Rightarrow>
                (if uov \<or> sov then Ok poison else Ok (vi64 (a + b)))
      )"
-| "addValues wrap poison v2 = Ok poison"
-| "addValues wrap v1 poison = Ok poison"
-| "addValues _ _ _ = Err IncompatibleTypes"
+| "add_values wrap poison v2 = Ok poison"
+| "add_values wrap v1 poison = Ok poison"
+| "add_values _ _ _ = Err IncompatibleTypes"
 
 
 (* Execute a single instruction *)
-fun executeInstruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (State * LLVMValue option) Result" where
+fun execute_instruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (State * LLVMValue option) Result" where
   (* Allocate new stack value, and set the specified register to its address. *)
-  "executeInstruction (r, s, m) (alloca name type align) =
-    (let (s', a) = allocateStack s in
-      (case setRegister r name (vsaddr a) of
+  "execute_instruction (r, s, m) (alloca name type align) =
+    (let (s', a) = allocate_stack s in
+      (case set_register r name (vsaddr a) of
         Err e \<Rightarrow> Err e
       | Ok r' \<Rightarrow> Ok ((r', s', m), None)))" |
   (* Read address from pointer and store value in either stack or memory. *)
-  "executeInstruction s (store type value pointer align) =
-    (case storeValue s value pointer of
+  "execute_instruction s (store type value pointer align) =
+    (case store_value s value pointer of
       Err e \<Rightarrow> Err e
     | Ok s' \<Rightarrow> Ok (s', None))" |
   (* Read address from pointer, and load value from either stack or memory. *)
-  "executeInstruction s (load register type pointer align) =
-    (case loadValue s register pointer of
+  "execute_instruction s (load register type pointer align) =
+    (case load_value s register pointer of
       Err e \<Rightarrow> Err e
     | Ok s' \<Rightarrow> Ok (s', None))" |
   (* Get values, add according to wrap option (or poison), and store in register. *)
-  "executeInstruction (r, s, m) (add register wrap type v1 v2) =
-    (case getValue r v1 of
+  "execute_instruction (r, s, m) (add register wrap type v1 v2) =
+    (case get_value r v1 of
       Err e \<Rightarrow> Err e
     | Ok v1' \<Rightarrow>
-      (case getValue r v2 of
+      (case get_value r v2 of
         Err e \<Rightarrow> Err e
       | Ok v2' \<Rightarrow>
-        (case addValues wrap v1' v2' of
+        (case add_values wrap v1' v2' of
           Err e \<Rightarrow> Err e
         | Ok v \<Rightarrow>
-          (case setRegister r register v of
+          (case set_register r register v of
             Err e \<Rightarrow> Err e
           | Ok r' \<Rightarrow> Ok ((r', s, m), None)))))" |
   (* Set the return value to the value of v. *)
-  "executeInstruction (r, s, m) (ret t v) =
-    (case getValue r v of
+  "execute_instruction (r, s, m) (ret t v) =
+    (case get_value r v of
       Err e \<Rightarrow> Err e
     | Ok v' \<Rightarrow> Ok ((r, s, m), Some v'))"
 
 
-fun executeInstructions :: "State \<Rightarrow> LLVMInstruction list \<Rightarrow> (State * LLVMValue option) Result" where
-  "executeInstructions s [] = Ok (s, None)" |
-  "executeInstructions s (i#is) =
-    (case executeInstruction s i of
+fun execute_instructions :: "State \<Rightarrow> LLVMInstruction list \<Rightarrow> (State * LLVMValue option) Result" where
+  "execute_instructions s [] = Ok (s, None)" |
+  "execute_instructions s (i#is) =
+    (case execute_instruction s i of
       Err e \<Rightarrow> Err e
     | Ok (s', r) \<Rightarrow>
       (case r of
-        None \<Rightarrow> executeInstructions s' is
+        None \<Rightarrow> execute_instructions s' is
       | (Some _) \<Rightarrow> Ok (s', r)))"
 
-fun executeFunction :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMValue option) Result" where
-  "executeFunction v (Func _ i _) =
-    (case executeInstructions v i of
+fun execute_function :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMValue option) Result" where
+  "execute_function v (Func _ i _) =
+    (case execute_instructions v i of
       Err e \<Rightarrow> Err e
     | Ok (_, r) \<Rightarrow> Ok r)"
 
@@ -277,7 +361,7 @@ definition attrs :: "LLVMAttributes" where
 
 value "LLVM meta [main] attrs"
 
-value "executeFunction ([], [], []) main"
+value "execute_function ([], [], []) main"
 
 
 end
