@@ -210,7 +210,7 @@ fun executeInstruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (St
     (case loadValue s register pointer of
       Err e \<Rightarrow> Err e
     | Ok s' \<Rightarrow> Ok (s', None))" |
-  (*   *)
+  (* Get values, add according to wrap option (or poison), and store in register. *)
   "executeInstruction (r, s, m) (add register wrap type v1 v2) =
     (case getValue r v1 of
       Err e \<Rightarrow> Err e
