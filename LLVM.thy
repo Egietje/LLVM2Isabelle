@@ -114,9 +114,6 @@ fun set_stack :: "Stack \<Rightarrow> LLVMStackAddress \<Rightarrow> LLVMValue \
     (Err e) \<Rightarrow> Err e |
     (Ok s) \<Rightarrow> Ok (x#s))"
 
-lemma stack_allocate_append_unset: "(s', i) = allocate_stack s \<longrightarrow> s' = s@[unset]"
-  using allocate_stack_def by simp
-
 lemma stack_allocate_len: "(s', i) = allocate_stack s \<longrightarrow> length s' = length s + 1"
   using allocate_stack_def by simp
 
@@ -129,10 +126,21 @@ lemma stack_get_eq_index: "i < length s \<longrightarrow> get_stack s i = Ok (s!
 lemma stack_allocate_get_unset: "(s', i) = allocate_stack s \<longrightarrow> get_stack s' i = Ok unset"
   using allocate_stack_def stack_get_eq_index by simp
 
-lemma stack_set_unallocated: "i \<ge> length s \<longrightarrow> set_stack s i v = Err UnallocatedStackAddress"
+lemma stack_allocate_unallocated: "(s', i) = allocate_stack s \<longrightarrow> \<not>valid_stack_address s i"
+  using allocate_stack_def valid_stack_address_def by simp
+
+lemma stack_allocate_valid: "(s', i) = allocate_stack s \<longrightarrow> valid_stack_address s' i"
+  using allocate_stack_def valid_stack_address_def by simp
+
+lemma stack_valid_suc: "valid_stack_address s (Suc i) \<longrightarrow> valid_stack_address s i"
+  using valid_stack_address_def by simp
+
+lemma stack_set_unallocated: "\<not>valid_stack_address s i \<longrightarrow> set_stack s i v = Err UnallocatedStackAddress"
+  unfolding valid_stack_address_def
   by (induct rule: set_stack.induct; simp)
 
-lemma stack_set_ok: "i < length s \<longrightarrow> s' = set_stack s i v \<longrightarrow> isOk s'"
+lemma stack_set_ok: "valid_stack_address s i \<longrightarrow> s' = set_stack s i v \<longrightarrow> isOk s'"
+  unfolding valid_stack_address_def
 proof (induct rule: set_stack.induct)
   case (1 uu uv)
   then show ?case by simp
@@ -144,37 +152,67 @@ next
   then show ?case by (cases "set_stack xs n v"; simp)
 qed
 
-lemma aaaa: "i < length s \<longrightarrow> Suc i < length (a#s)" by simp
-lemma aaab: "Suc i < length (a#s) \<longrightarrow> i < length s" by simp
-
-lemma stack_set_len: "i < length s \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> length s = length s'"
-proof (induct s)
+lemma stack_set_len: "valid_stack_address s i \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> length s = length s'"
+proof (induct s arbitrary: s' i v)
   case Nil
   then show ?case by simp
 next
-  case (Cons a s)
-  then show ?case proof (induct i)
-    case 0
-    then show ?case by simp
-  next
-    case (Suc i)
-    then have "length s = i" using Suc Cons try sorry
-    then show ?case try0 sorry
+  case (Cons a s s' i v)
+  then show ?case apply auto proof -
+    assume IH: "\<And>i s' v. valid_stack_address s i \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> length s = length s'"
+    assume valid: "valid_stack_address (a # s) i"
+    assume s_def: "Ok s' = set_stack (a # s) i v"
+    
+    show "Suc (length s) = length s'"
+      using Result.distinct(1) Result.inject(1) Result.simps(5) Suc_less_eq isOk.elims(2)
+    length_Cons list.inject set_stack.elims stack_set_ok valid_stack_address_def IH valid s_def Cons sorry
   qed
 qed
 
 
-lemma stack_get_set: "i < length s \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> get_stack s' i = Ok v"
-proof (induct rule: get_stack.induct)
-  case (1 uu)
-  then show ?case sorry
+lemma stack_set_valid: "set_stack s i v = Ok s' \<longrightarrow> valid_stack_address s' i \<and> valid_stack_address s i"
+  using valid_stack_address_def set_stack.simps Result.distinct(2) stack_set_len stack_set_unallocated by metis
+
+lemma stack_set_index: "valid_stack_address s i \<longrightarrow> Ok s'= set_stack s i v \<longrightarrow> s'!i = v"
+proof (induct arbitrary: s rule: set_stack.induct)
+  case (1 uu uv)
+  then show ?case using stack_set_len by fastforce
 next
-  case (2 x uv)
-  then show ?case sorry
+  case (2 uw s v)
+  then show ?case using Result.inject(1) valid_stack_address_def set_stack.simps nth_Cons' list_exhaust_size_gt0
+    by metis
 next
-  case (3 uw xs a)
-  then show ?case sorry
+  case (3 x xs n v)
+  then show ?case proof (cases "set_stack xs n v")
+    case (Ok x1)
+    then show ?thesis apply (auto simp: stack_valid_suc) proof -
+      assume x1_def: "set_stack xs n v = Ok x1"
+      assume valid: "valid_stack_address s (Suc n)"
+      assume x_xs_def: "Ok (x # xs) = set_stack s (Suc n) v"
+      then have "valid_stack_address s n" using 3 stack_valid_suc valid by simp
+      then have "length s > 0"
+        using valid_stack_address_def by auto
+      then obtain a as where a_def: "s = a#as" using list_exhaust_size_gt0 by auto
+      then have "valid_stack_address as n" using valid valid_stack_address_def by simp
+      then have "Ok xs = set_stack as n v" using x_xs_def x1_def valid Ok 3 a_def
+        by (smt (verit, del_insts) Result.inject(1) Result.simps(5) isOk.elims(2) list.inject
+            set_stack.simps(3) stack_set_ok)
+      then show "set_stack xs n v = Ok x1
+                  \<Longrightarrow> valid_stack_address s (Suc n)
+                  \<Longrightarrow> Ok (x # xs) = set_stack s (Suc n) v
+                  \<Longrightarrow> xs ! n = v"
+        by (metis "3" stack_set_valid)
+    qed
+  next
+    case (Err x2)
+    then show ?thesis
+      by (metis Suc_less_SucD isOk.simps(2) length_Cons stack_set_len stack_set_ok
+          valid_stack_address_def)
+  qed
 qed
+
+lemma stack_set_get: "valid_stack_address s i \<longrightarrow> Ok s' = set_stack s i v \<longrightarrow> get_stack s' i = Ok v"
+  using stack_get_eq_index stack_set_index stack_set_len valid_stack_address_def by simp
 
 
 
