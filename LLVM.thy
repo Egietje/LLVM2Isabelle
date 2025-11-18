@@ -158,7 +158,7 @@ lemma memory_valid_suc: "valid_memory_address s (Suc i) \<longrightarrow> valid_
   using valid_memory_address_def
   by simp
 
-lemma memory_set_unallocated: "\<not>valid_memory_address s i \<longrightarrow> set_memory s i v = Err UnallocatedStackAddress"
+lemma memory_set_unallocated: "\<not>valid_memory_address s i \<longrightarrow> set_memory s i v = Err UnallocatedAddress"
   unfolding set_memory_def
   by simp
 
