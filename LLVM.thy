@@ -7,44 +7,44 @@ value "Mapping.ordered_entries (Mapping.empty :: (nat, nat) mapping)"
 
 section "LLVM AST"
 
-datatype LLVMType = i32 | i64 | f32 | saddr | maddr
+datatype llvm_type = i32 | i64 | f32 | saddr | maddr
 
-type_synonym LLVMRegisterName = string
-type_synonym MemoryModelAddress = nat
+type_synonym llvm_register_name = string
+type_synonym memory_model_address = nat
 
-datatype LLVMAddress = saddr MemoryModelAddress | haddr MemoryModelAddress
+datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
-datatype LLVMValue = vi32 word32 | vi64 word64 | addr LLVMAddress | poison | freed | unset
+datatype llvm_value = vi32 word32 | vi64 word64 | addr llvm_address | poison | freed | unset
 
-datatype LLVMValueRef = reg LLVMRegisterName | val LLVMValue
+datatype llvm_value_ref = reg llvm_register_name | val llvm_value
 
 (* Should only have a memory address or memory address... *)
-datatype LLVMPointer = ptr LLVMValueRef
+datatype llvm_pointer = ptr llvm_value_ref
 
-datatype LLVMFunctionDefinition = func_def string LLVMType
+datatype llvm_function_definition = func_def string llvm_type
 
-type_synonym LLVMAlign = int
+type_synonym llvm_align = int
 
-datatype LLVMAddWrapOption = add_nuw | add_nsw | add_nuw_nsw | add_default
+datatype llvm_add_wrap = add_nuw | add_nsw | add_nuw_nsw | add_default
 
-datatype LLVMInstruction
-  = alloca LLVMRegisterName LLVMType "LLVMAlign option"
-  | store LLVMType LLVMValueRef LLVMPointer "LLVMAlign option"
-  | load LLVMRegisterName LLVMType LLVMPointer "LLVMAlign option"
-  | add LLVMRegisterName LLVMAddWrapOption LLVMType LLVMValueRef LLVMValueRef
-  | ret LLVMType LLVMValueRef
+datatype llvm_instruction
+  = alloca llvm_register_name llvm_type "llvm_align option"
+  | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
+  | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
+  | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+  | ret llvm_type llvm_value_ref
 
-type_synonym LLVMInstructions = "LLVMInstruction list"
+type_synonym llvm_instructions = "llvm_instruction list"
 
-type_synonym LLVMLabeledInstructions = "string \<Rightarrow> LLVMInstructions option"
+type_synonym llvm_labeled_instructions = "string \<Rightarrow> llvm_instructions option"
 
-datatype LLVMFunction = func LLVMFunctionDefinition LLVMInstructions LLVMLabeledInstructions
+datatype llvm_function = func llvm_function_definition llvm_instructions llvm_labeled_instructions
 
-datatype LLVMMetaData = meta string string string
+datatype llvm_metadata = meta string string string
 
-type_synonym LLVMAttributes = "string list"
+type_synonym llvm_attributes = "string list"
 
-datatype LLVM = llvm LLVMMetaData "LLVMFunction list" LLVMAttributes
+datatype llvm = llvm llvm_metadata "llvm_function list" llvm_attributes
 
 
 
@@ -53,12 +53,12 @@ section "Execution"
 subsection "Result monad"
 
 
-datatype Error = UnknownRegister | UninitializedRegister | RegisterOverride
-  | UnallocatedAddress
-  | Uninitializedsaddr | UninitializedMemoryAddress
-  | NotAnAddress | IncompatibleTypes
+datatype error = unknown_register | uninitialized_register | register_override
+  | unallocated_address
+  | uninitialized_stack_address | uninitialized_heap_address
+  | not_an_address | incompatible_types
 
-datatype 'a result = ok 'a | err Error
+datatype 'a result = ok 'a | err error
 
 
 definition bind :: "'a result \<Rightarrow> ('a \<Rightarrow> 'b result) \<Rightarrow> 'b result" where
@@ -75,27 +75,27 @@ adhoc_overloading
 subsection "State"
 
 
-type_synonym Registers = "(LLVMRegisterName, LLVMValue) mapping"
-type_synonym MemoryModel = "LLVMValue list"
-type_synonym State = "Registers * MemoryModel * MemoryModel"
+type_synonym register_model = "(llvm_register_name, llvm_value) mapping"
+type_synonym memory_model = "llvm_value list"
+type_synonym state = "register_model * memory_model * memory_model"
 
 
-(* Register func_deftions and lemmas *)
-definition get_register :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue result" where
-  "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err UnknownRegister | Some v \<Rightarrow> ok v)"
+(* Register model operations and lemmas *)
+definition get_register :: "register_model \<Rightarrow> llvm_register_name \<Rightarrow> llvm_value result" where
+  "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
 
-definition set_register :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue \<Rightarrow> Registers result" where
-  "set_register r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err RegisterOverride)"
+definition set_register :: "register_model \<Rightarrow> llvm_register_name \<Rightarrow> llvm_value \<Rightarrow> register_model result" where
+  "set_register r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
 
-definition empty_registers :: "Registers" where
-  "empty_registers = Mapping.empty"
+definition empty_register_model :: "register_model" where
+  "empty_register_model = Mapping.empty"
 
 
-lemma register_empty_get: "get_register empty_registers n = err UnknownRegister"
-  unfolding get_register_def empty_registers_def
+lemma register_empty_get: "get_register empty_register_model n = err unknown_register"
+  unfolding get_register_def empty_register_model_def
   by auto
 
-lemma register_set_ok_unknown: "set_register r n v = ok r' \<longrightarrow> get_register r n = err UnknownRegister"
+lemma register_set_ok_unknown: "set_register r n v = ok r' \<longrightarrow> get_register r n = err unknown_register"
   unfolding set_register_def get_register_def option.case_eq_if
   by simp
 
@@ -109,39 +109,39 @@ lemma register_set_get: "set_register r n v = ok r' \<longrightarrow> get_regist
   unfolding set_register_def get_register_def option.case_eq_if
   by auto
 
-lemma register_get_ok_set: "get_register r n = ok v \<longrightarrow> set_register r n v' = err RegisterOverride"
+lemma register_get_ok_set: "get_register r n = ok v \<longrightarrow> set_register r n v' = err register_override"
   unfolding set_register_def get_register_def option.case_eq_if
   by simp
 
-lemma register_set_set: "set_register r n v = ok r' \<longrightarrow> set_register r' n v' = err RegisterOverride"
+lemma register_set_set: "set_register r n v = ok r' \<longrightarrow> set_register r' n v' = err register_override"
   unfolding set_register_def option.case_eq_if
   by auto
 
 
 
-definition get_value :: "Registers \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMValue result" where
+definition get_value :: "register_model \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
   "get_value r v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register r re)"
 
 
-(* Stack func_deftions and lemmas *)
-definition allocate_memory :: "MemoryModel \<Rightarrow> (MemoryModel * MemoryModelAddress)" where
+(* Memory model operations and lemmas *)
+definition allocate_memory :: "memory_model \<Rightarrow> (memory_model * memory_model_address)" where
   "allocate_memory s = (s@[unset], length s)"
 
-definition valid_memory_address :: "MemoryModel \<Rightarrow> MemoryModelAddress \<Rightarrow> bool" where
+definition valid_memory_address :: "memory_model \<Rightarrow> memory_model_address \<Rightarrow> bool" where
   "valid_memory_address s a = (a < length s)"
 
-definition get_memory :: "MemoryModel \<Rightarrow> MemoryModelAddress \<Rightarrow> LLVMValue result" where
-  "get_memory s a = (if valid_memory_address s a then ok (s!a) else err UnallocatedAddress)"
+definition get_memory :: "memory_model \<Rightarrow> memory_model_address \<Rightarrow> llvm_value result" where
+  "get_memory s a = (if valid_memory_address s a then ok (s!a) else err unallocated_address)"
 
-definition set_memory :: "MemoryModel \<Rightarrow> MemoryModelAddress \<Rightarrow> LLVMValue \<Rightarrow> MemoryModel result" where
-  "set_memory s a v = (if valid_memory_address s a then ok (s[a:=v]) else err UnallocatedAddress)"
+definition set_memory :: "memory_model \<Rightarrow> memory_model_address \<Rightarrow> llvm_value \<Rightarrow> memory_model result" where
+  "set_memory s a v = (if valid_memory_address s a then ok (s[a:=v]) else err unallocated_address)"
 
-definition empty_memory :: "MemoryModel" where
-  "empty_memory = []"
+definition empty_memory_model :: "memory_model" where
+  "empty_memory_model = []"
 
 
-lemma memory_empty_get: "get_memory empty_memory a = err UnallocatedAddress"
-  unfolding empty_memory_def get_memory_def valid_memory_address_def by simp
+lemma memory_empty_get: "get_memory empty_memory_model a = err unallocated_address"
+  unfolding empty_memory_model_def get_memory_def valid_memory_address_def by simp
 
 lemma memory_allocate_get_unset: "allocate_memory s = (s', i) \<longrightarrow> get_memory s' i = ok unset"
   using allocate_memory_def get_memory_def valid_memory_address_def by auto
@@ -158,7 +158,7 @@ lemma memory_valid_suc: "valid_memory_address s (Suc i) \<longrightarrow> valid_
   using valid_memory_address_def
   by simp
 
-lemma memory_set_unallocated: "\<not>valid_memory_address s i \<longrightarrow> set_memory s i v = err UnallocatedAddress"
+lemma memory_set_unallocated: "\<not>valid_memory_address s i \<longrightarrow> set_memory s i v = err unallocated_address"
   unfolding set_memory_def
   by simp
 
@@ -202,7 +202,7 @@ lemma memory_alloc_get_eq: "valid_memory_address s a \<longrightarrow> get_memor
 subsection "Executors"
 
 (* Store instruction helpers *)
-fun store_to_stack_or_heap :: "Registers \<Rightarrow> MemoryModel \<Rightarrow> MemoryModel \<Rightarrow> LLVMAddress \<Rightarrow> LLVMValue \<Rightarrow> State result" where
+fun store_to_stack_or_heap :: "register_model \<Rightarrow> memory_model \<Rightarrow> memory_model \<Rightarrow> llvm_address \<Rightarrow> llvm_value \<Rightarrow> state result" where
   "store_to_stack_or_heap r s h (saddr a) v = do {
     s' \<leftarrow> set_memory s a v;
     return (r, s', h)
@@ -212,31 +212,31 @@ fun store_to_stack_or_heap :: "Registers \<Rightarrow> MemoryModel \<Rightarrow>
     return (r, s, h')
   }"
 
-fun store_value :: "State \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMPointer \<Rightarrow> State result" where
+fun store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
   "store_value (r, s, m) v (ptr p) = do {
     a \<leftarrow> get_value r p;
-    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err NotAnAddress);
+    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address);
     val \<leftarrow> get_value r v;
     store_to_stack_or_heap r s m ad val
   }"
 
 (* Load instruction helpers *)
-fun load_from_stack_or_heap :: "MemoryModel \<Rightarrow> MemoryModel \<Rightarrow> LLVMAddress \<Rightarrow> LLVMValue result" where
+fun load_from_stack_or_heap :: "memory_model \<Rightarrow> memory_model \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
   "load_from_stack_or_heap s h (saddr a) = do {
     val \<leftarrow> get_memory s a;
-    res \<leftarrow> (case val of unset \<Rightarrow> err Uninitializedsaddr | v \<Rightarrow> ok v);
+    res \<leftarrow> (case val of unset \<Rightarrow> err uninitialized_stack_address | v \<Rightarrow> ok v);
     return res
   }"
 | "load_from_stack_or_heap s h (haddr a) = do {
     val \<leftarrow> get_memory h a;
-    res \<leftarrow> (case val of unset \<Rightarrow> err Uninitializedsaddr | v \<Rightarrow> ok v);
+    res \<leftarrow> (case val of unset \<Rightarrow> err uninitialized_stack_address | v \<Rightarrow> ok v);
     return res
   }"
 
-fun load_value :: "State \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMPointer \<Rightarrow> State result" where
+fun load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
   "load_value (r, s, h) n (ptr p) = do {
     a \<leftarrow> get_value r p;
-    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err NotAnAddress);
+    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address);
     v \<leftarrow> load_from_stack_or_heap s h ad;
     r' \<leftarrow> set_register r n v;
     return (r', s, h)
@@ -255,7 +255,7 @@ fun unsigned_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" wher
 fun signed_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
   "signed_overflow64 a b = (sint a + sint b \<noteq> sint (a + b))"
 
-fun add_values :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue \<Rightarrow> LLVMValue result" where
+fun add_values :: "llvm_add_wrap \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
   "add_values wrap (vi32 a) (vi32 b) = (
       let uov = unsigned_overflow32 a b;
           sov = signed_overflow32 a b
@@ -281,11 +281,11 @@ fun add_values :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMV
 | "add_values _ poison (vi64 _) = ok poison"
 | "add_values _ (vi64 _) poison = ok poison"
 | "add_values _ poison poison = ok poison"
-| "add_values _ _ _ = err IncompatibleTypes"
+| "add_values _ _ _ = err incompatible_types"
 
 
 (* Execute a single instruction *)
-fun execute_instruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (State * LLVMValue option) result" where
+fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (state * llvm_value option) result" where
   (* Allocate new memory value, and set the specified register to its address. *)
   "execute_instruction (r, s, h) (alloca name type align) =
     (let (s', a) = allocate_memory s in do {
@@ -317,7 +317,7 @@ fun execute_instruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (S
 }"
 
 
-fun execute_instructions :: "State \<Rightarrow> LLVMInstruction list \<Rightarrow> (State * LLVMValue option) result" where
+fun execute_instructions :: "state \<Rightarrow> llvm_instruction list \<Rightarrow> (state * llvm_value option) result" where
   "execute_instructions s [] = ok (s, None)" |
   "execute_instructions s (i#is) = do {
     (s', r) \<leftarrow> execute_instruction s i;
@@ -325,7 +325,7 @@ fun execute_instructions :: "State \<Rightarrow> LLVMInstruction list \<Rightarr
     return res
   }"
 
-fun execute_function :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMValue option) result" where
+fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_value option) result" where
   "execute_function v (func _ i _) = do {
     (_, r) \<leftarrow> execute_instructions v i;
     return r
@@ -333,7 +333,7 @@ fun execute_function :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMVal
 
 
 
-definition main :: "LLVMFunction" where
+definition main :: "llvm_function" where
   "main = func (func_def ''main'' i32) [
     alloca ''%1'' i32 (Some 4),
     alloca ''%2'' i32 (Some 4),
@@ -352,7 +352,7 @@ definition main :: "LLVMFunction" where
   ] (\<lambda>x. None)"
 
 
-value "execute_function (empty_registers, empty_memory, empty_memory) main"
+value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) main"
 
 
 end
