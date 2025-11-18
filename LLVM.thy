@@ -12,7 +12,7 @@ datatype LLVMType = i32 | i64 | f32 | saddr | maddr
 type_synonym LLVMRegisterName = string
 type_synonym MemoryModelAddress = nat
 
-datatype LLVMAddress = StackAddress MemoryModelAddress | HeapAddress MemoryModelAddress
+datatype LLVMAddress = saddr MemoryModelAddress | haddr MemoryModelAddress
 
 datatype LLVMValue = vi32 word32 | vi64 word64 | addr LLVMAddress | poison | freed | unset
 
@@ -21,11 +21,11 @@ datatype LLVMValueRef = reg LLVMRegisterName | val LLVMValue
 (* Should only have a memory address or memory address... *)
 datatype LLVMPointer = ptr LLVMValueRef
 
-datatype LLVMFunctionDefinition = FuncDef string LLVMType
+datatype LLVMFunctionDefinition = func_def string LLVMType
 
 type_synonym LLVMAlign = int
 
-datatype LLVMAddWrapOption = AddNoUnsignedWrap | AddNoSignedWrap | AddNoUnsignedSignedWrap | AddDefaultWrap
+datatype LLVMAddWrapOption = add_nuw | add_nsw | add_nuw_nsw | add_default
 
 datatype LLVMInstruction
   = alloca LLVMRegisterName LLVMType "LLVMAlign option"
@@ -38,24 +38,24 @@ type_synonym LLVMInstructions = "LLVMInstruction list"
 
 type_synonym LLVMLabeledInstructions = "string \<Rightarrow> LLVMInstructions option"
 
-datatype LLVMFunction = Func LLVMFunctionDefinition LLVMInstructions LLVMLabeledInstructions
+datatype LLVMFunction = func LLVMFunctionDefinition LLVMInstructions LLVMLabeledInstructions
 
-datatype LLVMMetaData = Meta string string string
+datatype LLVMMetaData = meta string string string
 
 type_synonym LLVMAttributes = "string list"
 
-datatype LLVM = LLVM LLVMMetaData "LLVMFunction list" LLVMAttributes
+datatype LLVM = llvm LLVMMetaData "LLVMFunction list" LLVMAttributes
 
 
 
 section "Execution"
 
-subsection "result Monad"
+subsection "Result monad"
 
 
 datatype Error = UnknownRegister | UninitializedRegister | RegisterOverride
   | UnallocatedAddress
-  | UninitializedStackAddress | UninitializedMemoryAddress
+  | Uninitializedsaddr | UninitializedMemoryAddress
   | NotAnAddress | IncompatibleTypes
 
 datatype 'a result = ok 'a | err Error
@@ -80,7 +80,7 @@ type_synonym MemoryModel = "LLVMValue list"
 type_synonym State = "Registers * MemoryModel * MemoryModel"
 
 
-(* Register functions and lemmas *)
+(* Register func_deftions and lemmas *)
 definition get_register :: "Registers \<Rightarrow> LLVMRegisterName \<Rightarrow> LLVMValue result" where
   "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err UnknownRegister | Some v \<Rightarrow> ok v)"
 
@@ -123,7 +123,7 @@ definition get_value :: "Registers \<Rightarrow> LLVMValueRef \<Rightarrow> LLVM
   "get_value r v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register r re)"
 
 
-(* Stack functions and lemmas *)
+(* Stack func_deftions and lemmas *)
 definition allocate_memory :: "MemoryModel \<Rightarrow> (MemoryModel * MemoryModelAddress)" where
   "allocate_memory s = (s@[unset], length s)"
 
@@ -203,11 +203,11 @@ subsection "Executors"
 
 (* Store instruction helpers *)
 fun store_to_stack_or_heap :: "Registers \<Rightarrow> MemoryModel \<Rightarrow> MemoryModel \<Rightarrow> LLVMAddress \<Rightarrow> LLVMValue \<Rightarrow> State result" where
-  "store_to_stack_or_heap r s h (StackAddress a) v = do {
+  "store_to_stack_or_heap r s h (saddr a) v = do {
     s' \<leftarrow> set_memory s a v;
     return (r, s', h)
   }"
-| "store_to_stack_or_heap r s h (HeapAddress a) v = do {
+| "store_to_stack_or_heap r s h (haddr a) v = do {
     h' \<leftarrow> set_memory h a v;
     return (r, s, h')
   }"
@@ -222,14 +222,14 @@ fun store_value :: "State \<Rightarrow> LLVMValueRef \<Rightarrow> LLVMPointer \
 
 (* Load instruction helpers *)
 fun load_from_stack_or_heap :: "MemoryModel \<Rightarrow> MemoryModel \<Rightarrow> LLVMAddress \<Rightarrow> LLVMValue result" where
-  "load_from_stack_or_heap s h (StackAddress a) = do {
+  "load_from_stack_or_heap s h (saddr a) = do {
     val \<leftarrow> get_memory s a;
-    res \<leftarrow> (case val of unset \<Rightarrow> err UninitializedStackAddress | v \<Rightarrow> ok v);
+    res \<leftarrow> (case val of unset \<Rightarrow> err Uninitializedsaddr | v \<Rightarrow> ok v);
     return res
   }"
-| "load_from_stack_or_heap s h (HeapAddress a) = do {
+| "load_from_stack_or_heap s h (haddr a) = do {
     val \<leftarrow> get_memory h a;
-    res \<leftarrow> (case val of unset \<Rightarrow> err UninitializedStackAddress | v \<Rightarrow> ok v);
+    res \<leftarrow> (case val of unset \<Rightarrow> err Uninitializedsaddr | v \<Rightarrow> ok v);
     return res
   }"
 
@@ -260,20 +260,20 @@ fun add_values :: "LLVMAddWrapOption \<Rightarrow> LLVMValue \<Rightarrow> LLVMV
       let uov = unsigned_overflow32 a b;
           sov = signed_overflow32 a b
       in case wrap of
-           AddDefaultWrap \<Rightarrow> ok (vi32 (a + b))
-         | AddNoUnsignedWrap \<Rightarrow> (if uov then ok poison else ok (vi32 (a + b)))
-         | AddNoSignedWrap \<Rightarrow> (if sov then ok poison else ok (vi32 (a + b)))
-         | AddNoUnsignedSignedWrap \<Rightarrow>
+           add_default \<Rightarrow> ok (vi32 (a + b))
+         | add_nuw \<Rightarrow> (if uov then ok poison else ok (vi32 (a + b)))
+         | add_nsw \<Rightarrow> (if sov then ok poison else ok (vi32 (a + b)))
+         | add_nuw_nsw \<Rightarrow>
                (if uov \<or> sov then ok poison else ok (vi32 (a + b)))
      )"
 | "add_values wrap (vi64 a) (vi64 b) = (
       let uov = unsigned_overflow64 a b;
           sov = signed_overflow64 a b
       in case wrap of
-           AddDefaultWrap \<Rightarrow> ok (vi64 (a + b))
-         | AddNoUnsignedWrap \<Rightarrow> (if uov then ok poison else ok (vi64 (a + b)))
-         | AddNoSignedWrap \<Rightarrow> (if sov then ok poison else ok (vi64 (a + b)))
-         | AddNoUnsignedSignedWrap \<Rightarrow>
+           add_default \<Rightarrow> ok (vi64 (a + b))
+         | add_nuw \<Rightarrow> (if uov then ok poison else ok (vi64 (a + b)))
+         | add_nsw \<Rightarrow> (if sov then ok poison else ok (vi64 (a + b)))
+         | add_nuw_nsw \<Rightarrow>
                (if uov \<or> sov then ok poison else ok (vi64 (a + b)))
      )"
 | "add_values _ poison (vi32 _) = ok poison"
@@ -289,7 +289,7 @@ fun execute_instruction :: "State \<Rightarrow> LLVMInstruction \<Rightarrow> (S
   (* Allocate new memory value, and set the specified register to its address. *)
   "execute_instruction (r, s, h) (alloca name type align) =
     (let (s', a) = allocate_memory s in do {
-      r' \<leftarrow> set_register r name (addr (StackAddress a));
+      r' \<leftarrow> set_register r name (addr (saddr a));
       return ((r', s', h), None)
     })"
   (* Read address from pointer and store value in either memory or memory. *)
@@ -326,7 +326,7 @@ fun execute_instructions :: "State \<Rightarrow> LLVMInstruction list \<Rightarr
   }"
 
 fun execute_function :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMValue option) result" where
-  "execute_function v (Func _ i _) = do {
+  "execute_function v (func _ i _) = do {
     (_, r) \<leftarrow> execute_instructions v i;
     return r
   }"
@@ -334,7 +334,7 @@ fun execute_function :: "State \<Rightarrow> LLVMFunction \<Rightarrow> (LLVMVal
 
 
 definition main :: "LLVMFunction" where
-  "main = Func (FuncDef ''main'' i32) [
+  "main = func (func_def ''main'' i32) [
     alloca ''%1'' i32 (Some 4),
     alloca ''%2'' i32 (Some 4),
     alloca ''%3'' i32 (Some 4),
@@ -345,17 +345,11 @@ definition main :: "LLVMFunction" where
     store i32 (val (vi32 3)) (ptr (reg ''%3'')) (Some 4),
     load ''%5'' i32 (ptr (reg ''%2'')) (Some 4),
     load ''%6'' i32 (ptr (reg ''%3'')) (Some 4),
-    add ''%7'' AddNoUnsignedWrap i32 (reg ''%5'') (reg ''%6''),
+    add ''%7'' add_nuw i32 (reg ''%5'') (reg ''%6''),
     store i32 (reg ''%7'') (ptr (reg ''%4'')) (Some 4),
     load ''%8'' i32 (ptr (reg ''%4'')) (Some 4),
     ret i32 (reg ''%8'')
   ] (\<lambda>x. None)"
-
-definition meta :: "LLVMMetaData" where
-  "meta = Meta ''test.c'' ''e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128'' ''x86_64-w64-windows-gnu''"
-
-definition attrs :: "LLVMAttributes" where
-  "attrs = []"
 
 
 value "execute_function (empty_registers, empty_memory, empty_memory) main"
