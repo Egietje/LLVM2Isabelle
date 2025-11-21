@@ -7,14 +7,14 @@ value "Mapping.ordered_entries (Mapping.empty :: (nat, nat) mapping)"
 
 section "LLVM AST"
 
-datatype llvm_type = i32 | i64 | f32 | saddr | maddr
+datatype llvm_type = i1 | i32 | i64 | f32 | saddr | maddr
 
 type_synonym llvm_register_name = string
 type_synonym memory_model_address = nat
 
 datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
-datatype llvm_value = vi32 word32 | vi64 word64 | addr llvm_address | poison | freed | unset
+datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison | freed | unset
 
 datatype llvm_value_ref = reg llvm_register_name | val llvm_value
 
@@ -26,17 +26,25 @@ datatype llvm_function_definition = func_def string llvm_type
 type_synonym llvm_align = int
 
 datatype llvm_add_wrap = add_nuw | add_nsw | add_nuw_nsw | add_default
+datatype llvm_compare_condition = comp_eq | comp_ne
+                                | comp_ugt | comp_uge | comp_ult | comp_ule
+                                | comp_sgt | comp_sge | comp_slt | comp_sle
+type_synonym llvm_same_sign = bool
 
-datatype llvm_instruction
-  = alloca llvm_register_name llvm_type "llvm_align option"
-  | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
-  | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
-  | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
-  | ret llvm_type llvm_value_ref
+type_synonym llvm_label = string
+
+datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align option"
+                          | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
+                          | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
+                          | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+                          | ret llvm_type llvm_value_ref
+                          | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
+                          | br_i1 llvm_value_ref llvm_label llvm_label
+                          | br_label llvm_label
 
 type_synonym llvm_instructions = "llvm_instruction list"
 
-type_synonym llvm_labeled_instructions = "string \<Rightarrow> llvm_instructions option"
+type_synonym llvm_labeled_instructions = "llvm_label \<Rightarrow> llvm_instructions option"
 
 datatype llvm_function = func llvm_function_definition llvm_instructions llvm_labeled_instructions
 
@@ -56,7 +64,7 @@ subsection "Result monad"
 datatype error = unknown_register | uninitialized_register | register_override
   | unallocated_address
   | uninitialized_stack_address | uninitialized_heap_address
-  | not_an_address | incompatible_types
+  | not_an_address | incompatible_types | unknown_label
 
 datatype 'a result = ok 'a | err error
 
@@ -243,6 +251,7 @@ fun load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_poi
   }"
 
 (* Add instruction helpers *)
+(* TODO: support pointers *)
 fun unsigned_overflow32 :: "word32 \<Rightarrow> word32 \<Rightarrow> bool" where
   "unsigned_overflow32 a b = ((a + b) < a)"
 
@@ -283,55 +292,142 @@ fun add_values :: "llvm_add_wrap \<Rightarrow> llvm_value \<Rightarrow> llvm_val
 | "add_values _ poison poison = ok poison"
 | "add_values _ _ _ = err incompatible_types"
 
+(* Compare instruction helpers *)
+fun compare_values_32 :: "llvm_compare_condition \<Rightarrow> word32 \<Rightarrow> word32 \<Rightarrow> llvm_value" where
+  "compare_values_32 comp_eq a b = vi1 (a = b)"
+| "compare_values_32 comp_ne a b = vi1 (a \<noteq> b)"
+| "compare_values_32 comp_ugt a b = vi1 ((uint a) > (uint b))"
+| "compare_values_32 comp_uge a b = vi1 ((uint a) \<ge> (uint b))"
+| "compare_values_32 comp_ult a b = vi1 ((uint a) < (uint b))"
+| "compare_values_32 comp_ule a b = vi1 ((uint a) \<le> (uint b))"
+| "compare_values_32 comp_sgt a b = vi1 ((sint a) > (sint b))"
+| "compare_values_32 comp_sge a b = vi1 ((sint a) \<ge> (sint b))"
+| "compare_values_32 comp_slt a b = vi1 ((sint a) < (sint b))"
+| "compare_values_32 comp_sle a b = vi1 ((sint a) \<le> (sint b))"
+
+fun compare_values_64 :: "llvm_compare_condition \<Rightarrow> word64 \<Rightarrow> word64 \<Rightarrow> llvm_value" where
+  "compare_values_64 comp_eq a b = vi1 (a = b)"
+| "compare_values_64 comp_ne a b = vi1 (a \<noteq> b)"
+| "compare_values_64 comp_ugt a b = vi1 ((uint a) > (uint b))"
+| "compare_values_64 comp_uge a b = vi1 ((uint a) \<ge> (uint b))"
+| "compare_values_64 comp_ult a b = vi1 ((uint a) < (uint b))"
+| "compare_values_64 comp_ule a b = vi1 ((uint a) \<le> (uint b))"
+| "compare_values_64 comp_sgt a b = vi1 ((sint a) > (sint b))"
+| "compare_values_64 comp_sge a b = vi1 ((sint a) \<ge> (sint b))"
+| "compare_values_64 comp_slt a b = vi1 ((sint a) < (sint b))"
+| "compare_values_64 comp_sle a b = vi1 ((sint a) \<le> (sint b))"
+
+(* TODO: support pointers *)
+fun compare_values :: "llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
+  "compare_values c (vi32 a) (vi32 b) = ok (compare_values_32 c a b)"
+| "compare_values c (vi64 a) (vi64 b) = ok (compare_values_64 c a b)"
+| "compare_values _ _ _ = err incompatible_types"
+
+fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
+  "compare_values_sign False c a b = compare_values c a b"
+| "compare_values_sign True c (vi32 a) (vi32 b) = (if (sint a) \<ge> 0 \<and> (sint b) \<ge> 0 then compare_values c (vi32 a) (vi32 b) else ok poison)"
+| "compare_values_sign True c (vi64 a) (vi64 b) = (if (sint a) \<ge> 0 \<and> (sint b) \<ge> 0 then compare_values c (vi64 a) (vi64 b) else ok poison)"
+| "compare_values_sign True c _ _ = err incompatible_types"
 
 (* Execute a single instruction *)
-fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (state * llvm_value option) result" where
+fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (state * llvm_value option * llvm_label option) result" where
   (* Allocate new memory value, and set the specified register to its address. *)
   "execute_instruction (r, s, h) (alloca name type align) =
     (let (s', a) = allocate_memory s in do {
       r' \<leftarrow> set_register r name (addr (saddr a));
-      return ((r', s', h), None)
+      return ((r', s', h), None, None)
     })"
   (* Read address from pointer and store value in either memory or memory. *)
 | "execute_instruction s (store type value pointer align) = do {
     s' \<leftarrow> store_value s value pointer;
-    return (s', None)
+    return (s', None, None)
   }"
   (* Read address from pointer, and load value from either memory or memory. *)
 | "execute_instruction s (load register type pointer align) = do {
     s' \<leftarrow> load_value s register pointer;
-    return (s', None)
+    return (s', None, None)
   }"
   (* Get values, add according to wrap option (or poison), and store in register. *)
 | "execute_instruction (r, s, h) (add register wrap type v1 v2) = do {
-  v1' \<leftarrow> get_value r v1;
-  v2' \<leftarrow> get_value r v2;
-  res \<leftarrow> add_values wrap v1' v2';
-  r' \<leftarrow> set_register r register res;
-  return ((r', s, h), None)
-}"
-  (* Set the return value to the value of v. *)
-| "execute_instruction (r, s, m) (ret t v) = do {
-  res \<leftarrow> get_value r v;
-  return ((r,s,m), Some res)
-}"
-
-
-fun execute_instructions :: "state \<Rightarrow> llvm_instruction list \<Rightarrow> (state * llvm_value option) result" where
-  "execute_instructions s [] = ok (s, None)" |
-  "execute_instructions s (i#is) = do {
-    (s', r) \<leftarrow> execute_instruction s i;
-    res \<leftarrow> (case r of None \<Rightarrow> execute_instructions s' is | _ \<Rightarrow> return (s', r));
-    return res
+    v1' \<leftarrow> get_value r v1;
+    v2' \<leftarrow> get_value r v2;
+    res \<leftarrow> add_values wrap v1' v2';
+    r' \<leftarrow> set_register r register res;
+    return ((r', s, h), None, None)
   }"
+  (* Set the return value to the value of v. *)
+| "execute_instruction (r, s, h) (ret t v) = do {
+    res \<leftarrow> get_value r v;
+    return ((r, s, h), Some res, None)
+  }"
+  (* Get values, do comparison, and store in register. *)
+| "execute_instruction (r, s, h) (icmp register same_sign cond type v1 v2) = do {
+    v1' \<leftarrow> get_value r v1;
+    v2' \<leftarrow> get_value r v2;
+    res \<leftarrow> compare_values_sign same_sign cond v1' v2';
+    r' \<leftarrow> set_register r register res;
+    return ((r', s, h), None, None)
+  }"
+  (* Return branch label as third return value. *)
+| "execute_instruction (r, s, h) (br_i1 v l1 l2) = do {
+    val \<leftarrow> get_value r v;
+    label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
+    return ((r, s, h), None, Some label)
+  }"
+| "execute_instruction s (br_label l) = ok (s, None, Some l)"
+
+function execute_instructions
+  :: "state \<Rightarrow> llvm_instructions \<Rightarrow> llvm_labeled_instructions \<Rightarrow> (state * llvm_value option) result"
+where
+  "execute_instructions s is ls =
+    (case is of
+       [] \<Rightarrow> ok (s, None)
+     | i # is' \<Rightarrow>
+         (case execute_instruction s i of
+            err e \<Rightarrow> err e
+          | ok (s', r, l) \<Rightarrow>
+              (case r of
+                 Some v \<Rightarrow> ok (s', Some v)
+               | None \<Rightarrow>
+                   (case l of
+                      None \<Rightarrow> execute_instructions s' is' ls
+                    | Some label \<Rightarrow>
+                        (case ls label of
+                           None \<Rightarrow> err unknown_label
+                         | Some is'' \<Rightarrow> execute_instructions s' is'' ls)))))"
+  by auto
+termination execute_instructions
+  sorry (* TODO... although we cannot prove this since programs can loop forever... *)
 
 fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_value option) result" where
-  "execute_function v (func _ i _) = do {
-    (_, r) \<leftarrow> execute_instructions v i;
+  "execute_function s (func _ is ls) = do {
+    (_, r) \<leftarrow> execute_instructions s is ls;
     return r
   }"
 
 
+
+definition b10 :: "llvm_instructions" where
+  "b10 = [
+    store i32 (val (vi32 3)) (ptr (reg ''%4'')) (Some 4),
+    load ''%11'' i32 (ptr (reg ''%4'')) (Some 4),
+    store i32 (reg ''%11'') (ptr (reg ''%3'')) (Some 4),
+    br_label ''14''
+  ]"
+
+definition b12 :: "llvm_instructions" where
+  "b12 = [
+    store i32 (val (vi32 4)) (ptr (reg ''%5'')) (Some 4),
+    load ''%13'' i32 (ptr (reg ''%5'')) (Some 4),
+    store i32 (reg ''%13'') (ptr (reg ''%3'')) (Some 4),
+    br_label ''14''
+  ]"
+
+definition b14 :: "llvm_instructions" where
+  "b14 = [
+    load ''%15'' i32 (ptr (reg ''%3'')) (Some 4),
+    ret i32 (reg ''%15'')
+  ]"
 
 definition main :: "llvm_function" where
   "main = func (func_def ''main'' i32) [
@@ -339,18 +435,62 @@ definition main :: "llvm_function" where
     alloca ''%2'' i32 (Some 4),
     alloca ''%3'' i32 (Some 4),
     alloca ''%4'' i32 (Some 4),
+    alloca ''%5'' i32 (Some 4),
     store i32 (val (vi32 0)) (ptr (reg ''%1'')) (Some 4),
     store i32 (val (vi32 1)) (ptr (reg ''%2'')) (Some 4),
     store i32 (val (vi32 2)) (ptr (reg ''%3'')) (Some 4),
-    store i32 (val (vi32 3)) (ptr (reg ''%3'')) (Some 4),
-    load ''%5'' i32 (ptr (reg ''%2'')) (Some 4),
-    load ''%6'' i32 (ptr (reg ''%3'')) (Some 4),
-    add ''%7'' add_nuw i32 (reg ''%5'') (reg ''%6''),
-    store i32 (reg ''%7'') (ptr (reg ''%4'')) (Some 4),
-    load ''%8'' i32 (ptr (reg ''%4'')) (Some 4),
-    ret i32 (reg ''%8'')
-  ] (\<lambda>x. None)"
+    load ''%6'' i32 (ptr (reg ''%2'')) (Some 4),
+    add ''%7'' add_nsw i32 (reg ''%6'') (val (vi32 1)),
+    load ''%8'' i32 (ptr (reg ''%3'')) (Some 4),
+    icmp ''%9'' False comp_eq i32 (reg ''%7'') (reg ''%8''),
+    br_i1 (reg ''%9'') ''10'' ''12''
+  ] (\<lambda>x. (case x of ''10'' \<Rightarrow> Some b10 | ''12'' \<Rightarrow> Some b12 | ''14'' \<Rightarrow> Some b14 | _ \<Rightarrow> None))"
+(*
+int main() {
+    int x = 1;
+    int y = 2;
+    if (x + 1 == y) {
+        int z = 3;
+        y = z;
+    } else {
+        int z = 4;
+        y = z;
+    }
+    return y;
+}
 
+define dso_local i32 @main() #0 {
+  %1 = alloca i32, align 4
+  %2 = alloca i32, align 4
+  %3 = alloca i32, align 4
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  store i32 0, ptr %1, align 4
+  store i32 1, ptr %2, align 4
+  store i32 2, ptr %3, align 4
+  %6 = load i32, ptr %2, align 4
+  %7 = add nsw i32 %6, 1
+  %8 = load i32, ptr %3, align 4
+  %9 = icmp eq i32 %7, %8
+  br i1 %9, label %10, label %12
+
+10:
+  store i32 3, ptr %4, align 4
+  %11 = load i32, ptr %4, align 4
+  store i32 %11, ptr %3, align 4
+  br label %14
+
+12:
+  store i32 4, ptr %5, align 4
+  %13 = load i32, ptr %5, align 4
+  store i32 %13, ptr %3, align 4
+  br label %14
+
+14:
+  %15 = load i32, ptr %3, align 4
+  ret i32 %15
+}
+*)
 
 value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) main"
 
