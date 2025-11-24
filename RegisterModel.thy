@@ -7,19 +7,18 @@ section "Definitions"
 
 subsection "Types"
 
-type_synonym register_name = string
-type_synonym 'a register_model = "(register_name, 'a) mapping"
+type_synonym ('n, 'v) register_model = "('n, 'v) mapping"
 
 
 subsection "Operations"
 
-definition get_register :: "'a register_model \<Rightarrow> register_name \<Rightarrow> 'a result" where
+definition get_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v result" where
   "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
 
-definition set_register :: "'a register_model \<Rightarrow> register_name \<Rightarrow> 'a \<Rightarrow> 'a register_model result" where
+definition set_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register_model result" where
   "set_register r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
 
-definition empty_register_model :: "'a register_model" where
+definition empty_register_model :: "('n, 'v) register_model" where
   "empty_register_model = Mapping.empty"
 
 
