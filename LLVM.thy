@@ -44,6 +44,7 @@ datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align opti
                           | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
                           | br_i1 llvm_value_ref llvm_label llvm_label
                           | br_label llvm_label
+                          | phi llvm_register_name llvm_type "(llvm_value_ref * llvm_label) list"
 
 
 subsection "Blocks, functions, programs"
@@ -245,7 +246,8 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (
     return ((r, s, h), None, Some label)
   }"
 | "execute_instruction s (br_label l) = ok (s, None, Some l)"
-
+  (* Check previous executed block, store proper value in register. *)
+| "execute_instruction (r, s, h) (phi register type values) = ok ((r, s, h), None, None)"
 
 subsection "Block and function"
 
@@ -285,57 +287,44 @@ section "Test program"
 
 definition bmain :: "llvm_instruction_block" where
   "bmain = [
-    alloca ''%1'' i32 (Some 4),
-    alloca ''%2'' i32 (Some 4),
-    alloca ''%3'' i32 (Some 4),
-    alloca ''%4'' i32 (Some 4),
-    alloca ''%5'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''%1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''%2'')) (Some 4),
-    store i32 (val (vi32 2)) (ptr (reg ''%3'')) (Some 4),
-    load ''%6'' i32 (ptr (reg ''%2'')) (Some 4),
-    add ''%7'' add_nsw i32 (reg ''%6'') (val (vi32 1)),
-    load ''%8'' i32 (ptr (reg ''%3'')) (Some 4),
-    icmp ''%9'' False comp_eq i32 (reg ''%7'') (reg ''%8''),
-    br_i1 (reg ''%9'') ''10'' ''12''
+    alloca ''1'' i32 (Some 4),
+    alloca ''2'' i32 (Some 4),
+    alloca ''3'' i32 (Some 4),
+    alloca ''4'' i32 (Some 4),
+    store i32 (val (vi32 0)) (ptr (reg ''1'')) (Some 4),
+    store i32 (val (vi32 1)) (ptr (reg ''2'')) (Some 4),
+    load ''5'' i32 (ptr (reg ''2'')) (Some 4),
+    icmp ''6'' False comp_ne i32 (reg ''4'') (val (vi32 0)),
+    br_i1 (reg ''6'') ''7'' ''9''
+  ]"
+
+definition b7 :: "llvm_instruction_block" where
+  "b7 = [
+    store i32 (val (vi32 1)) (ptr (reg ''4'')) (Some 4),
+    load ''8'' i32 (ptr (reg ''4'')) (Some 4),
+    br_label ''10''
+  ]"
+
+definition b9 :: "llvm_instruction_block" where
+  "b9 = [
+    br_label ''10''
   ]"
 
 definition b10 :: "llvm_instruction_block" where
   "b10 = [
-    store i32 (val (vi32 3)) (ptr (reg ''%4'')) (Some 4),
-    load ''%11'' i32 (ptr (reg ''%4'')) (Some 4),
-    store i32 (reg ''%11'') (ptr (reg ''%3'')) (Some 4),
-    br_label ''14''
-  ]"
-
-definition b12 :: "llvm_instruction_block" where
-  "b12 = [
-    store i32 (val (vi32 4)) (ptr (reg ''%5'')) (Some 4),
-    load ''%13'' i32 (ptr (reg ''%5'')) (Some 4),
-    store i32 (reg ''%13'') (ptr (reg ''%3'')) (Some 4),
-    br_label ''14''
-  ]"
-
-definition b14 :: "llvm_instruction_block" where
-  "b14 = [
-    load ''%15'' i32 (ptr (reg ''%3'')) (Some 4),
-    ret i32 (reg ''%15'')
+    phi ''11'' i32 [(reg ''8'', ''7''), (val (vi32 0), ''9'')],
+    store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
+    load ''12'' i32 (ptr (reg ''%3'')) (Some 4),
+    ret i32 (reg ''%12'')
   ]"
 
 definition main :: "llvm_function" where
-  "main = func (func_def ''main'' i32) bmain (Mapping.of_alist [(''10'', b10), (''12'', b12), (''14'', b14)])"
+  "main = func (func_def ''main'' i32) bmain (Mapping.of_alist [(''7'', b7), (''9'', b9), (''10'', b10)])"
 (*
 int main() {
-    int x = 1;
-    int y = 2;
-    if (x + 1 == y) {
-        int z = 3;
-        y = z;
-    } else {
-        int z = 4;
-        y = z;
-    }
-    return y;
+    int y = 1;
+    int x = y?1:0;
+    return x;
 }
 
 define dso_local i32 @main() #0 {
@@ -343,31 +332,25 @@ define dso_local i32 @main() #0 {
   %2 = alloca i32, align 4
   %3 = alloca i32, align 4
   %4 = alloca i32, align 4
-  %5 = alloca i32, align 4
   store i32 0, ptr %1, align 4
   store i32 1, ptr %2, align 4
-  store i32 2, ptr %3, align 4
-  %6 = load i32, ptr %2, align 4
-  %7 = add nsw i32 %6, 1
-  %8 = load i32, ptr %3, align 4
-  %9 = icmp eq i32 %7, %8
-  br i1 %9, label %10, label %12
+  %5 = load i32, ptr %2, align 4
+  %6 = icmp ne i32 %5, 0
+  br i1 %6, label %7, label %9
+
+7:
+  store i32 1, ptr %4, align 4
+  %8 = load i32, ptr %4, align 4
+  br label %10
+
+9:
+  br label %10
 
 10:
-  store i32 3, ptr %4, align 4
-  %11 = load i32, ptr %4, align 4
+  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
   store i32 %11, ptr %3, align 4
-  br label %14
-
-12:
-  store i32 4, ptr %5, align 4
-  %13 = load i32, ptr %5, align 4
-  store i32 %13, ptr %3, align 4
-  br label %14
-
-14:
-  %15 = load i32, ptr %3, align 4
-  ret i32 %15
+  %12 = load i32, ptr %3, align 4
+  ret i32 %12
 }
 *)
 
