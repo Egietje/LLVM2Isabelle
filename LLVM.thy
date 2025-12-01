@@ -251,7 +251,7 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (
 
 subsection "Block and function"
 
-function execute_block
+partial_function (tailrec) execute_block
   :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result"
 where
   "execute_block s is ls =
@@ -270,10 +270,14 @@ where
                         (case Mapping.lookup ls label of
                            None \<Rightarrow> err unknown_label
                          | Some is'' \<Rightarrow> execute_block s' is'' ls)))))"
-  by auto
+(*  by auto
 termination execute_block
   sorry (* TODO... although we cannot prove this since programs can loop forever... *)
 (* But we do want this to generate code so we can evaluate things *)
+*)
+
+lemmas [code] = execute_block.simps
+
 
 fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_value option) result" where
   "execute_function s (func _ is ls) = do {
@@ -285,42 +289,48 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
 
 section "Test program"
 
+
 definition bmain :: "llvm_instruction_block" where
   "bmain = [
-    alloca ''1'' i32 (Some 4),
-    alloca ''2'' i32 (Some 4),
-    alloca ''3'' i32 (Some 4),
-    alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''2'')) (Some 4),
-    load ''5'' i32 (ptr (reg ''2'')) (Some 4),
-    icmp ''6'' False comp_ne i32 (reg ''4'') (val (vi32 0)),
-    br_i1 (reg ''6'') ''7'' ''9''
-  ]"
-
-definition b7 :: "llvm_instruction_block" where
-  "b7 = [
-    store i32 (val (vi32 1)) (ptr (reg ''4'')) (Some 4),
-    load ''8'' i32 (ptr (reg ''4'')) (Some 4),
-    br_label ''10''
-  ]"
-
-definition b9 :: "llvm_instruction_block" where
-  "b9 = [
-    br_label ''10''
+    alloca ''%1'' i32 (Some 4),
+    alloca ''%2'' i32 (Some 4),
+    alloca ''%3'' i32 (Some 4),
+    alloca ''%4'' i32 (Some 4),
+    alloca ''%5'' i32 (Some 4),
+    store i32 (val (vi32 0)) (ptr (reg ''%1'')) (Some 4),
+    store i32 (val (vi32 1)) (ptr (reg ''%2'')) (Some 4),
+    store i32 (val (vi32 2)) (ptr (reg ''%3'')) (Some 4),
+    load ''%6'' i32 (ptr (reg ''%2'')) (Some 4),
+    add ''%7'' add_nsw i32 (reg ''%6'') (val (vi32 1)),
+    load ''%8'' i32 (ptr (reg ''%3'')) (Some 4),
+    icmp ''%9'' False comp_eq i32 (reg ''%7'') (reg ''%8''),
+    br_i1 (reg ''%9'') ''10'' ''12''
   ]"
 
 definition b10 :: "llvm_instruction_block" where
   "b10 = [
-    phi ''11'' i32 [(reg ''8'', ''7''), (val (vi32 0), ''9'')],
-    store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
-    load ''12'' i32 (ptr (reg ''%3'')) (Some 4),
-    ret i32 (reg ''%12'')
+    store i32 (val (vi32 3)) (ptr (reg ''%4'')) (Some 4),
+    load ''%11'' i32 (ptr (reg ''%4'')) (Some 4),
+    store i32 (reg ''%11'') (ptr (reg ''%3'')) (Some 4),
+    br_label ''14''
+  ]"
+
+definition b12 :: "llvm_instruction_block" where
+  "b12 = [
+    store i32 (val (vi32 4)) (ptr (reg ''%5'')) (Some 4),
+    load ''%13'' i32 (ptr (reg ''%5'')) (Some 4),
+    store i32 (reg ''%13'') (ptr (reg ''%3'')) (Some 4),
+    br_label ''14''
+  ]"
+
+definition b14 :: "llvm_instruction_block" where
+  "b14 = [
+    load ''%15'' i32 (ptr (reg ''%3'')) (Some 4),
+    ret i32 (reg ''%15'')
   ]"
 
 definition main :: "llvm_function" where
-  "main = func (func_def ''main'' i32) bmain (Mapping.of_alist [(''7'', b7), (''9'', b9), (''10'', b10)])"
-(*
+  "main = func (func_def ''main'' i32) bmain (Mapping.of_alist [(''10'', b10), (''12'', b12), (''14'', b14)])"(*
 int main() {
     int y = 1;
     int x = y?1:0;
@@ -355,6 +365,6 @@ define dso_local i32 @main() #0 {
 *)
 
 value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) main"
-                                        
+
 
 end

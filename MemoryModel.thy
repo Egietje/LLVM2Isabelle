@@ -14,6 +14,15 @@ type_synonym memory_model_address = nat
 
 subsection "Operations"
 
+fun assert where "assert e True = return ()" | "assert e False = err e"
+lemma assert_inv_simps[simp]: 
+  "assert e P = return x \<longleftrightarrow> P" 
+  "assert e P = err e' \<longleftrightarrow> \<not>P \<and> e'=e"
+  apply (cases P; simp add: return_def)
+  apply (cases P; auto simp add: return_def)
+  done
+
+
 definition allocate_memory :: "'a memory_model \<Rightarrow> ('a memory_model * memory_model_address)" where
   "allocate_memory m = (m@[mem_unset], length m)"
 
@@ -28,6 +37,25 @@ definition get_memory :: "'a memory_model \<Rightarrow> memory_model_address \<R
       | mem_val v \<Rightarrow> ok v
       | mem_freed \<Rightarrow> err unallocated_address
     ) else err unallocated_address)"
+
+lemma return_bind[simp]: "do {x\<leftarrow>return v; f x} = f v"
+  unfolding bind_def return_def by auto
+
+lemma err_bind[simp]: "do { x\<leftarrow>err e; m x } = err e"
+  unfolding bind_def by auto
+
+
+lemma "get_memory m a = do {
+  assert unallocated_address (valid_memory_address m a);
+  (case (m!a) of
+    mem_unset \<Rightarrow> err uninitialized_address
+  | mem_val v \<Rightarrow> ok v
+  | mem_freed \<Rightarrow> err unallocated_address)
+}"
+  unfolding get_memory_def
+  by (auto )
+
+
 
 definition set_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a \<Rightarrow> 'a memory_model result" where
   "set_memory m a v = (if valid_memory_address m a then ok (m[a:=(mem_val v)]) else err unallocated_address)"
@@ -119,9 +147,9 @@ lemma memory_alloc_get_eq: "get_memory m a = ok v \<longrightarrow> allocate_mem
   by force
 
 
-lemma memory_free_get: "free_memory m a = ok m' \<longrightarrow> get_memory m' a = err unallocated_address"
+lemma memory_free_get: "free_memory m a = ok m' \<Longrightarrow> get_memory m' a = err unallocated_address"
   unfolding get_memory_def free_memory_def valid_memory_address_def
-  by auto
+  by (auto split: if_splits)
 
 lemma memory_free_set: "free_memory m a = ok m' \<longrightarrow> set_memory m' a v = err unallocated_address"
   unfolding set_memory_def free_memory_def valid_memory_address_def
@@ -134,6 +162,11 @@ lemma memory_free_invalid: "free_memory m a = ok m' \<longrightarrow> \<not>vali
 lemma memory_free_independent_valid: "valid_memory_address m a \<longrightarrow> free_memory m a' = ok m' \<longrightarrow> a \<noteq> a' \<longrightarrow> valid_memory_address m' a"
   unfolding get_memory_def free_memory_def valid_memory_address_def
   by auto
+
+lemma "free_memory m a' = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_memory_address m' a \<longleftrightarrow> valid_memory_address m a"
+  unfolding get_memory_def free_memory_def valid_memory_address_def
+  by (auto split: if_splits)
+
 
 lemma memory_free_independent_get: "get_memory m a = ok v \<longrightarrow> free_memory m a' = ok m' \<longrightarrow> a \<noteq> a' \<longrightarrow> get_memory m' a = ok v"
   unfolding free_memory_def get_memory_def valid_memory_address_def

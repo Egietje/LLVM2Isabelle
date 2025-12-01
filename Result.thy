@@ -18,6 +18,7 @@ definition return :: "'a \<Rightarrow> 'a result" where
 
 adhoc_overloading
   Monad_Syntax.bind==bind
+(* TODO Monad laws *)
 
 
 end
