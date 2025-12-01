@@ -10,6 +10,7 @@ subsection "Types"
 datatype error = unknown_register | uninitialized_register | register_override
   | unallocated_address | uninitialized_address
   | not_an_address | incompatible_types | unknown_label
+  | phi_no_previous_block | phi_label_not_found
 
 datatype 'a result = ok 'a | err error
 

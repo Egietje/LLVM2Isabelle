@@ -83,4 +83,79 @@ define dso_local i32 @main() #0 {
 
 value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) simple_branching_main"
 
+
+
+section "Phi Node"
+
+definition pmain :: "llvm_instruction_block" where
+  "pmain = ([
+    alloca ''1'' i32 (Some 4),
+    alloca ''2'' i32 (Some 4),
+    alloca ''3'' i32 (Some 4),
+    alloca ''4'' i32 (Some 4),
+    store i32 (val (vi32 0)) (ptr (reg ''1'')) (Some 4),
+    store i32 (val (vi32 1)) (ptr (reg ''2'')) (Some 4),
+    load ''5'' i32 (ptr (reg ''2'')) (Some 4),
+    icmp ''6'' False comp_ne i32 (reg ''5'') (val (vi32 0))],
+    br_i1 (reg ''6'') ''7'' ''9''
+  )"
+
+definition p7 :: "llvm_instruction_block" where
+  "p7 = ([
+    store i32 (val (vi32 1)) (ptr (reg ''4'')) (Some 4),
+    load ''8'' i32 (ptr (reg ''4'')) (Some 4)],
+    br_label ''10''
+  )"
+
+definition p9 :: "llvm_instruction_block" where
+  "p9 = ([],
+    br_label ''10''
+  )"
+
+definition p10 :: "llvm_instruction_block" where
+  "p10 = ([
+    phi ''11'' i32 [(reg ''8'', ''7''), (val (vi32 0), ''9'')],
+    store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
+    load ''12'' i32 (ptr (reg ''3'')) (Some 4)],
+    ret i32 (reg ''12'')
+  )"
+
+definition phi_main :: "llvm_function" where
+  "phi_main = func (func_def ''main'' i32) pmain (Mapping.of_alist [(''7'', p7), (''9'', p9), (''10'', p10)])"
+(*
+int main() {
+    int y = 1;
+    int x = y?1:0;
+    return x;
+}
+
+define dso_local i32 @main() #0 {
+  %1 = alloca i32, align 4
+  %2 = alloca i32, align 4
+  %3 = alloca i32, align 4
+  %4 = alloca i32, align 4
+  store i32 0, ptr %1, align 4
+  store i32 1, ptr %2, align 4
+  %5 = load i32, ptr %2, align 4
+  %6 = icmp ne i32 %5, 0
+  br i1 %6, label %7, label %9
+
+7:
+  store i32 1, ptr %4, align 4
+  %8 = load i32, ptr %4, align 4
+  br label %10
+
+9:
+  br label %10
+
+10:
+  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
+  store i32 %11, ptr %3, align 4
+  %12 = load i32, ptr %3, align 4
+  ret i32 %12
+}
+*)
+
+value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) phi_main"
+
 end

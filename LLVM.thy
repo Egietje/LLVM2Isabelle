@@ -203,27 +203,35 @@ fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition 
 | "compare_values_sign True c _ _ = err incompatible_types"
 
 
+subsection "Phi instruction helpers"
+
+fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_value_ref * llvm_label) list \<Rightarrow> llvm_value_ref result" where
+  "phi_lookup None _ = err phi_no_previous_block"
+| "phi_lookup _ [] = err phi_label_not_found"
+| "phi_lookup (Some l) ((v, l')#xs) = (if l = l' then ok v else phi_lookup (Some l) xs)"
+
+
 subsection "Instruction"
 
-fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
+fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
   (* Allocate new memory value on the stack, and set the specified register to its address. *)
-  "execute_instruction (r, s, h) (alloca name type align) =
+  "execute_instruction (r, s, h) _ (alloca name type align) =
     (let (s', a) = allocate_memory s in do {
       r' \<leftarrow> set_register r name (addr (saddr a));
       return (r', s', h)
     })"
   (* Read address from pointer and store value in the stack or the heap. *)
-| "execute_instruction s (store type value pointer align) = do {
+| "execute_instruction s _ (store type value pointer align) = do {
     s' \<leftarrow> store_value s value pointer;
     return s'
   }"
   (* Read address from pointer and load value from either the stack or the heap. *)
-| "execute_instruction s (load register type pointer align) = do {
+| "execute_instruction s _ (load register type pointer align) = do {
     s' \<leftarrow> load_value s register pointer;
     return s'
   }"
   (* Get values, add according to wrap option (or poison), and store in register. *)
-| "execute_instruction (r, s, h) (add register wrap type v1 v2) = do {
+| "execute_instruction (r, s, h) _ (add register wrap type v1 v2) = do {
     v1' \<leftarrow> get_value r v1;
     v2' \<leftarrow> get_value r v2;
     res \<leftarrow> add_values wrap v1' v2';
@@ -231,7 +239,7 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> s
     return (r', s, h)
   }"
   (* Get values, do comparison, and store in register. *)
-| "execute_instruction (r, s, h) (icmp register same_sign cond type v1 v2) = do {
+| "execute_instruction (r, s, h) _ (icmp register same_sign cond type v1 v2) = do {
     v1' \<leftarrow> get_value r v1;
     v2' \<leftarrow> get_value r v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
@@ -239,38 +247,43 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> s
     return (r', s, h)
   }"
   (* Check previous executed block, store proper value in register. *)
-| "execute_instruction (r, s, h) (phi register type values) = ok (r, s, h)"
+| "execute_instruction (r, s, h) p (phi register type values) = do {
+    v \<leftarrow> phi_lookup p values;
+    v' \<leftarrow> get_value r v;
+    r' \<leftarrow> set_register r register v';
+    return (r', s, h)
+  }"
 
 
 subsection "Blocks and functions"
 
-fun execute_block :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> (state * llvm_block_return) result" where
-  "execute_block s (i#is, t) = do {
-    s' \<leftarrow> execute_instruction s i;
-    execute_block s' (is, t)
+fun execute_block :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> (state * llvm_block_return) result" where
+  "execute_block s previous (i#is, t) = do {
+    s' \<leftarrow> execute_instruction s previous i;
+    execute_block s' previous (is, t)
   }"
-| "execute_block (r, s, h) (_, br_i1 v l1 l2) = do {
+| "execute_block (r, s, h) previous (_, br_i1 v l1 l2) = do {
     val \<leftarrow> get_value r v;
     label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
     return ((r, s, h), branch_label label)
   }"
-| "execute_block s (_, br_label l) = return (s, branch_label l)"
-| "execute_block (r, s, h) (_, ret t v) = do {
+| "execute_block s previous (_, br_label l) = return (s, branch_label l)"
+| "execute_block (r, s, h) previous (_, ret t v) = do {
     res \<leftarrow> get_value r v;
     return ((r, s, h), return_value res)
   }"
 
-partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result" where
-  "execute_blocks s b lbs =
-    (case execute_block s b of
+partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result" where
+  "execute_blocks state previous current block labeled_blocks =
+    (case execute_block state previous block of
       err e \<Rightarrow> err e
     | ok (s', br) \<Rightarrow>
       (case br of
         return_value v \<Rightarrow> ok (s', Some v)
       | branch_label l \<Rightarrow>
-        (case Mapping.lookup lbs l of
+        (case Mapping.lookup labeled_blocks l of
           None \<Rightarrow> err unknown_label
-        | Some b' \<Rightarrow> execute_blocks s' b' lbs
+        | Some b' \<Rightarrow> execute_blocks s' current (Some l) b' labeled_blocks
         )
       )
     )"
@@ -279,7 +292,7 @@ lemmas [code] = execute_blocks.simps
 
 fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_value option) result" where
   "execute_function s (func _ is ls) = do {
-    (_, r) \<leftarrow> execute_blocks s is ls;
+    (_, r) \<leftarrow> execute_blocks s None None is ls;
     return r
   }"
 
