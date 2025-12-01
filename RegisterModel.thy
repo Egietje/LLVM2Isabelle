@@ -25,30 +25,29 @@ definition empty_register_model :: "('n, 'v) register_model" where
 
 section "Lemmas"
 
-lemma register_empty_get: "get_register empty_register_model n = err unknown_register"
+lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
   unfolding get_register_def empty_register_model_def
-  by auto
-
-lemma register_set_ok_unknown: "set_register r n v = ok r' \<longrightarrow> get_register r n = err unknown_register"
-  unfolding set_register_def get_register_def option.case_eq_if
   by simp
 
-lemma register_get_set_get: "get_register r n = ok v \<longrightarrow> set_register r n' v' = ok r' \<longrightarrow> get_register r' n = ok v"
-  unfolding get_register_def set_register_def option.case_eq_if
-  using lookup_update' result.distinct(2) result.simps(1)
-  by metis
+lemma register_set_ok_unknown: "set_register r n v = ok r' \<Longrightarrow> get_register r n = err unknown_register"
+  unfolding set_register_def get_register_def option.case_eq_if
+  by (simp split: if_splits)
 
-lemma register_set_get: "set_register r n v = ok r' \<longrightarrow> get_register r' n = ok v"
+lemma register_set_independent_get: "set_register r n' v' = ok r' \<Longrightarrow> n \<noteq> n' \<Longrightarrow> get_register r n = get_register r' n"
+  unfolding get_register_def set_register_def option.case_eq_if
+  by (cases "Mapping.lookup r n'"; auto)
+
+lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_register r' n = ok v"
   using register_set_ok_unknown
   unfolding set_register_def get_register_def option.case_eq_if
-  by auto
+  by (auto split: if_splits)
 
-lemma register_get_ok_set: "get_register r n = ok v \<longrightarrow> set_register r n v' = err register_override"
+lemma register_get_ok_set: "get_register r n = ok v \<Longrightarrow> set_register r n v' = err register_override"
   unfolding set_register_def get_register_def option.case_eq_if
-  by simp
+  by (simp split: if_splits)
 
-lemma register_set_set: "set_register r n v = ok r' \<longrightarrow> set_register r' n v' = err register_override"
+lemma register_set_set: "set_register r n v = ok r' \<Longrightarrow> set_register r' n v' = err register_override"
   unfolding set_register_def option.case_eq_if
-  by auto
+  by (auto split: if_splits)
 
 end

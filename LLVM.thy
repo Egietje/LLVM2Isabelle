@@ -40,18 +40,22 @@ datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align opti
                           | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
                           | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
                           | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
-                          | ret llvm_type llvm_value_ref
                           | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | br_i1 llvm_value_ref llvm_label llvm_label
-                          | br_label llvm_label
                           | phi llvm_register_name llvm_type "(llvm_value_ref * llvm_label) list"
+
+datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
+                                     | br_i1 llvm_value_ref llvm_label llvm_label
+                                     | br_label llvm_label
 
 
 subsection "Blocks, functions, programs"
 
-type_synonym llvm_instruction_block = "llvm_instruction list"
+type_synonym llvm_instruction_block = "(llvm_instruction list * llvm_terminator_instruction)"
 
 type_synonym llvm_labeled_blocks = "(llvm_label, llvm_instruction_block) mapping"
+
+datatype llvm_block_return = return_value llvm_value
+                           | branch_label llvm_label
 
 datatype llvm_function_definition = func_def string llvm_type
 
@@ -201,22 +205,22 @@ fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition 
 
 subsection "Instruction"
 
-fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (state * llvm_value option * llvm_label option) result" where
+fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
   (* Allocate new memory value on the stack, and set the specified register to its address. *)
   "execute_instruction (r, s, h) (alloca name type align) =
     (let (s', a) = allocate_memory s in do {
       r' \<leftarrow> set_register r name (addr (saddr a));
-      return ((r', s', h), None, None)
+      return (r', s', h)
     })"
   (* Read address from pointer and store value in the stack or the heap. *)
 | "execute_instruction s (store type value pointer align) = do {
     s' \<leftarrow> store_value s value pointer;
-    return (s', None, None)
+    return s'
   }"
   (* Read address from pointer and load value from either the stack or the heap. *)
 | "execute_instruction s (load register type pointer align) = do {
     s' \<leftarrow> load_value s register pointer;
-    return (s', None, None)
+    return s'
   }"
   (* Get values, add according to wrap option (or poison), and store in register. *)
 | "execute_instruction (r, s, h) (add register wrap type v1 v2) = do {
@@ -224,12 +228,7 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (
     v2' \<leftarrow> get_value r v2;
     res \<leftarrow> add_values wrap v1' v2';
     r' \<leftarrow> set_register r register res;
-    return ((r', s, h), None, None)
-  }"
-  (* Set the return value to the value of v. *)
-| "execute_instruction (r, s, h) (ret t v) = do {
-    res \<leftarrow> get_value r v;
-    return ((r, s, h), Some res, None)
+    return (r', s, h)
   }"
   (* Get values, do comparison, and store in register. *)
 | "execute_instruction (r, s, h) (icmp register same_sign cond type v1 v2) = do {
@@ -237,134 +236,51 @@ fun execute_instruction :: "state \<Rightarrow> llvm_instruction \<Rightarrow> (
     v2' \<leftarrow> get_value r v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
     r' \<leftarrow> set_register r register res;
-    return ((r', s, h), None, None)
+    return (r', s, h)
   }"
-  (* Return branch label as third return value. *)
-| "execute_instruction (r, s, h) (br_i1 v l1 l2) = do {
+  (* Check previous executed block, store proper value in register. *)
+| "execute_instruction (r, s, h) (phi register type values) = ok (r, s, h)"
+
+
+subsection "Blocks and functions"
+
+fun execute_block :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> (state * llvm_block_return) result" where
+  "execute_block s (i#is, t) = do {
+    s' \<leftarrow> execute_instruction s i;
+    execute_block s' (is, t)
+  }"
+| "execute_block (r, s, h) (_, br_i1 v l1 l2) = do {
     val \<leftarrow> get_value r v;
     label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
-    return ((r, s, h), None, Some label)
+    return ((r, s, h), branch_label label)
   }"
-| "execute_instruction s (br_label l) = ok (s, None, Some l)"
-  (* Check previous executed block, store proper value in register. *)
-| "execute_instruction (r, s, h) (phi register type values) = ok ((r, s, h), None, None)"
+| "execute_block s (_, br_label l) = return (s, branch_label l)"
+| "execute_block (r, s, h) (_, ret t v) = do {
+    res \<leftarrow> get_value r v;
+    return ((r, s, h), return_value res)
+  }"
 
-subsection "Block and function"
+partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result" where
+  "execute_blocks s b lbs =
+    (case execute_block s b of
+      err e \<Rightarrow> err e
+    | ok (s', br) \<Rightarrow>
+      (case br of
+        return_value v \<Rightarrow> ok (s', Some v)
+      | branch_label l \<Rightarrow>
+        (case Mapping.lookup lbs l of
+          None \<Rightarrow> err unknown_label
+        | Some b' \<Rightarrow> execute_blocks s' b' lbs
+        )
+      )
+    )"
 
-partial_function (tailrec) execute_block
-  :: "state \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result"
-where
-  "execute_block s is ls =
-    (case is of
-       [] \<Rightarrow> ok (s, None)
-     | i # is' \<Rightarrow>
-         (case execute_instruction s i of
-            err e \<Rightarrow> err e
-          | ok (s', r, l) \<Rightarrow>
-              (case r of
-                 Some v \<Rightarrow> ok (s', Some v)
-               | None \<Rightarrow>
-                   (case l of
-                      None \<Rightarrow> execute_block s' is' ls
-                    | Some label \<Rightarrow>
-                        (case Mapping.lookup ls label of
-                           None \<Rightarrow> err unknown_label
-                         | Some is'' \<Rightarrow> execute_block s' is'' ls)))))"
-(*  by auto
-termination execute_block
-  sorry (* TODO... although we cannot prove this since programs can loop forever... *)
-(* But we do want this to generate code so we can evaluate things *)
-*)
-
-lemmas [code] = execute_block.simps
-
+lemmas [code] = execute_blocks.simps
 
 fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_value option) result" where
   "execute_function s (func _ is ls) = do {
-    (_, r) \<leftarrow> execute_block s is ls;
+    (_, r) \<leftarrow> execute_blocks s is ls;
     return r
   }"
-
-
-
-section "Test program"
-
-
-definition bmain :: "llvm_instruction_block" where
-  "bmain = [
-    alloca ''%1'' i32 (Some 4),
-    alloca ''%2'' i32 (Some 4),
-    alloca ''%3'' i32 (Some 4),
-    alloca ''%4'' i32 (Some 4),
-    alloca ''%5'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''%1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''%2'')) (Some 4),
-    store i32 (val (vi32 2)) (ptr (reg ''%3'')) (Some 4),
-    load ''%6'' i32 (ptr (reg ''%2'')) (Some 4),
-    add ''%7'' add_nsw i32 (reg ''%6'') (val (vi32 1)),
-    load ''%8'' i32 (ptr (reg ''%3'')) (Some 4),
-    icmp ''%9'' False comp_eq i32 (reg ''%7'') (reg ''%8''),
-    br_i1 (reg ''%9'') ''10'' ''12''
-  ]"
-
-definition b10 :: "llvm_instruction_block" where
-  "b10 = [
-    store i32 (val (vi32 3)) (ptr (reg ''%4'')) (Some 4),
-    load ''%11'' i32 (ptr (reg ''%4'')) (Some 4),
-    store i32 (reg ''%11'') (ptr (reg ''%3'')) (Some 4),
-    br_label ''14''
-  ]"
-
-definition b12 :: "llvm_instruction_block" where
-  "b12 = [
-    store i32 (val (vi32 4)) (ptr (reg ''%5'')) (Some 4),
-    load ''%13'' i32 (ptr (reg ''%5'')) (Some 4),
-    store i32 (reg ''%13'') (ptr (reg ''%3'')) (Some 4),
-    br_label ''14''
-  ]"
-
-definition b14 :: "llvm_instruction_block" where
-  "b14 = [
-    load ''%15'' i32 (ptr (reg ''%3'')) (Some 4),
-    ret i32 (reg ''%15'')
-  ]"
-
-definition main :: "llvm_function" where
-  "main = func (func_def ''main'' i32) bmain (Mapping.of_alist [(''10'', b10), (''12'', b12), (''14'', b14)])"(*
-int main() {
-    int y = 1;
-    int x = y?1:0;
-    return x;
-}
-
-define dso_local i32 @main() #0 {
-  %1 = alloca i32, align 4
-  %2 = alloca i32, align 4
-  %3 = alloca i32, align 4
-  %4 = alloca i32, align 4
-  store i32 0, ptr %1, align 4
-  store i32 1, ptr %2, align 4
-  %5 = load i32, ptr %2, align 4
-  %6 = icmp ne i32 %5, 0
-  br i1 %6, label %7, label %9
-
-7:
-  store i32 1, ptr %4, align 4
-  %8 = load i32, ptr %4, align 4
-  br label %10
-
-9:
-  br label %10
-
-10:
-  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
-  store i32 %11, ptr %3, align 4
-  %12 = load i32, ptr %3, align 4
-  ret i32 %12
-}
-*)
-
-value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) main"
-
 
 end
