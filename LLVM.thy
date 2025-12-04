@@ -209,6 +209,7 @@ fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_value_ref * llvm_label)
   "phi_lookup None _ = err phi_no_previous_block"
 | "phi_lookup _ [] = err phi_label_not_found"
 | "phi_lookup (Some l) ((v, l')#xs) = (if l = l' then ok v else phi_lookup (Some l) xs)"
+(* todo use alist or similar *)
 
 
 subsection "Instruction"
