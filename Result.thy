@@ -39,7 +39,6 @@ definition wp_ok :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarro
   "wp_ok m P = wp m P (\<lambda>x. True)"
 
 
-
 section "Lemmas"
 
 context
@@ -102,6 +101,7 @@ lemma wp_ok_ok_iff[simp]: "wp_ok (ok v) P \<longleftrightarrow> (P v)"
   unfolding wp_ok_def
   by simp
 
+
 lemma wp_err_iff[simp]: "wp (err e) P E \<longleftrightarrow> (E e)"
   unfolding wp_def
   by simp
@@ -109,6 +109,7 @@ lemma wp_err_iff[simp]: "wp (err e) P E \<longleftrightarrow> (E e)"
 lemma wp_ok_err_iff[simp]: "wp_ok (err e) P \<longleftrightarrow> True"
   unfolding wp_ok_def
   by simp
+
 
 lemma wp_return_iff[simp]: "wp (return x) P E \<longleftrightarrow> (P x)"
   unfolding return_def wp_def
@@ -118,6 +119,7 @@ lemma wp_ok_return_iff[simp]: "wp_ok (return x) P \<longleftrightarrow> (P x)"
   unfolding wp_ok_def
   by simp
 
+
 lemma wp_bind_iff[simp]: "wp (do {x \<leftarrow> m; f x}) P E \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp (f x) P E)) \<or> (\<exists>e. m = err e \<and> E e))"
   unfolding wp_def bind_def
   by (cases m; simp)
@@ -125,6 +127,32 @@ lemma wp_bind_iff[simp]: "wp (do {x \<leftarrow> m; f x}) P E \<longleftrightarr
 lemma wp_ok_bind_iff[simp]: "wp_ok (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp_ok (f x) P)) \<or> (\<exists>e. m = err e))"
   unfolding wp_ok_def
   by simp
+
+
+lemma wp_case_option_iff[simp]: 
+  "wp (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P E \<longleftrightarrow> 
+    ((c = None \<and> wp f P E) \<or>
+     (\<exists>v. c = Some v \<and> wp (g v) P E))"
+  by (cases c; simp)
+
+lemma wp_ok_case_option_iff[simp]: 
+  "wp_ok (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((c = None \<and> wp_ok f P) \<or>
+     (\<exists>v. c = Some v \<and> wp_ok (g v) P))"
+  by (cases c; simp)
+
+
+lemma wp_case_result_iff[simp]: 
+  "wp (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P E \<longleftrightarrow> 
+    ((\<exists>e. c = err e \<and> wp (f e) P E) \<or>
+     (\<exists>v. c = ok v \<and> wp (g v) P E))"
+  by (cases c; simp)
+
+lemma wp_ok_case_result_iff[simp]: 
+  "wp_ok (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((\<exists>e. c = err e \<and> wp_ok (f e) P) \<or>
+     (\<exists>v. c = ok v \<and> wp_ok (g v) P))"
+  by (cases c; simp)
 
 
 (* TODO: MONADIC IF *)

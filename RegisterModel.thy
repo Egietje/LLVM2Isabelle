@@ -29,18 +29,29 @@ lemma register_empty_get_unknown: "get_register empty_register_model n = err unk
   unfolding get_register_def empty_register_model_def
   by simp
 
+
 lemma register_set_ok_unknown: "set_register r n v = ok r' \<Longrightarrow> get_register r n = err unknown_register"
-  unfolding set_register_def get_register_def option.case_eq_if
-  by (simp split: if_splits)
+  unfolding set_register_def get_register_def
+  by (simp split: if_splits add: option.case_eq_if)
+
 
 lemma register_set_independent_get: "set_register r n' v' = ok r' \<Longrightarrow> n \<noteq> n' \<Longrightarrow> get_register r n = get_register r' n"
-  unfolding get_register_def set_register_def option.case_eq_if
+  unfolding get_register_def set_register_def
   by (cases "Mapping.lookup r n'"; auto)
 
+lemma register_set_independent_get_wp: "n \<noteq> n' \<Longrightarrow> wp_ok (set_register r n' v) (\<lambda>r'. get_register r' n = get_register r n)"
+  unfolding get_register_def set_register_def
+  by auto
+
+
 lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_register r' n = ok v"
-  using register_set_ok_unknown
-  unfolding set_register_def get_register_def option.case_eq_if
-  by (auto split: if_splits)
+  unfolding set_register_def get_register_def
+  by (auto split: if_splits simp add: option.case_eq_if)
+
+lemma register_set_get_wp: "wp_ok (do { r' \<leftarrow> set_register r n v; get_register r n }) ((=) v)"
+  unfolding set_register_def get_register_def
+  by (simp add: option.case_eq_if)
+
 
 lemma register_get_ok_set: "get_register r n = ok v \<Longrightarrow> set_register r n v' = err register_override"
   unfolding set_register_def get_register_def option.case_eq_if
