@@ -8,6 +8,7 @@ section "Definitions"
 subsection "Types"
 
 datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
+
 type_synonym 'a memory_model = "'a memory_value list"
 type_synonym memory_model_address = nat
 
@@ -47,6 +48,7 @@ definition empty_memory_model :: "'a memory_model" where
 
 
 section "Lemmas"
+
 
 
 subsection "Empty"
@@ -100,11 +102,29 @@ lemma memory_set_ok_valid: "set_memory m a v = ok m' \<Longrightarrow> valid_mem
   unfolding valid_memory_address_def
   by auto
 
+lemma memory_set_ok_valid_wp: "wp_ok (set_memory m a v) (\<lambda> m'. valid_memory_address m' a \<and> valid_memory_address m a)"
+  unfolding set_memory_def
+  apply simp
+  unfolding valid_memory_address_def
+  by simp
+
 lemma memory_set_override: "set_memory m i v = ok m' \<Longrightarrow> set_memory m' i v' = ok m'' \<Longrightarrow> get_memory m'' i = ok v'"
   unfolding set_memory_def get_memory_def
   apply simp
   unfolding valid_memory_address_def
   by auto
+
+lemma memory_set_override_wp:
+  "wp_ok (do {
+    m' \<leftarrow> set_memory m a v1;
+    m'' \<leftarrow> set_memory m' a v2;
+    get_memory m'' a}) (\<lambda>v. v = v2)"
+  apply simp
+  unfolding set_memory_def get_memory_def
+  apply simp
+  unfolding valid_memory_address_def
+  by auto
+
 
 lemma memory_set_identity: "get_memory m i = ok v \<Longrightarrow> set_memory m i v = ok m' \<Longrightarrow> m = m'"
   unfolding get_memory_def set_memory_def
@@ -114,17 +134,41 @@ lemma memory_set_identity: "get_memory m i = ok v \<Longrightarrow> set_memory m
   using list_update_id
   by metis
 
+lemma memory_set_identity_wp: "wp_ok (do { v \<leftarrow> get_memory m a; set_memory m a v }) ((=) m)"
+  apply simp
+  unfolding get_memory_def set_memory_def
+  apply simp
+  unfolding valid_memory_address_def
+  using list_update_id
+  by (cases "m!a"; auto; metis)
+
+
 lemma memory_set_get: "set_memory m i v = ok m' \<Longrightarrow> get_memory m' i = ok v"
   unfolding set_memory_def get_memory_def
   apply simp
   unfolding valid_memory_address_def
   by auto
 
+lemma memory_set_get_wp: "wp_ok (do {m' \<leftarrow> set_memory m a v; get_memory m' a}) ((=) v)"
+  apply simp
+  unfolding set_memory_def get_memory_def
+  apply simp
+  unfolding valid_memory_address_def
+  by auto
+
+
 lemma memory_set_independent_get: "set_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_memory m a = get_memory m' a"
   unfolding set_memory_def get_memory_def
   apply simp
   unfolding valid_memory_address_def
   by auto
+
+lemma memory_set_independent_get_wp: "a \<noteq> a' \<Longrightarrow> wp_ok (set_memory m a' v) (\<lambda>m'. get_memory m' a = get_memory m a)"
+  unfolding set_memory_def get_memory_def
+  apply simp
+  unfolding valid_memory_address_def
+  by auto
+
 
 lemma memory_set_independent_valid: "set_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_memory_address m a = valid_memory_address m' a"
   unfolding set_memory_def get_memory_def

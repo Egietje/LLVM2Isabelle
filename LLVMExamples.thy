@@ -114,7 +114,7 @@ definition p9 :: "llvm_instruction_block" where
 
 definition p10 :: "llvm_instruction_block" where
   "p10 = ([
-    phi ''11'' i32 [(reg ''8'', ''7''), (val (vi32 0), ''9'')],
+    phi ''11'' i32 [(''7'', reg ''8''), (''9'', val (vi32 0))],
     store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
     load ''12'' i32 (ptr (reg ''3'')) (Some 4)],
     ret i32 (reg ''12'')

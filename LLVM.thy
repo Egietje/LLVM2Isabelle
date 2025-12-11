@@ -41,7 +41,7 @@ datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align opti
                           | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
                           | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
                           | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | phi llvm_register_name llvm_type "(llvm_value_ref * llvm_label) list"
+                          | phi llvm_register_name llvm_type "(llvm_label * llvm_value_ref) list"
 
 datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
                                      | br_i1 llvm_value_ref llvm_label llvm_label
@@ -205,11 +205,11 @@ fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition 
 
 subsection "Phi instruction helpers"
 
-fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_value_ref * llvm_label) list \<Rightarrow> llvm_value_ref result" where
-  "phi_lookup None _ = err phi_no_previous_block"
-| "phi_lookup _ [] = err phi_label_not_found"
-| "phi_lookup (Some l) ((v, l')#xs) = (if l = l' then ok v else phi_lookup (Some l) xs)"
-(* todo use alist or similar *)
+fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_label * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
+  "phi_lookup l ls = do {
+    previous \<leftarrow> some_or_err l phi_no_previous_block;
+    some_or_err (Mapping.lookup (Mapping.of_alist ls) previous) phi_label_not_found
+  }"
 
 
 subsection "Instruction"
