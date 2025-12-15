@@ -35,8 +35,11 @@ fun some_or_err :: "'a option \<Rightarrow> error \<Rightarrow> 'a result" where
 definition wp :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
   "wp m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
 
-definition wp_ok :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
-  "wp_ok m P = wp m P (\<lambda>x. True)"
+definition wp_ignore_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
+  "wp_ignore_err m P = wp m P (\<lambda>x. True)"
+
+definition wp_never_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
+  "wp_never_err m P = wp m P (\<lambda>x. False)"
 
 
 section "Lemmas"
@@ -73,19 +76,18 @@ lemma assert_err_iff[simp]: "assert e P = err e' \<longleftrightarrow> \<not>P \
 subsection "Result simps"
 
 lemma result_bind_ok_iff[simp]: "do { x\<leftarrow>m; f x } = ok v \<longleftrightarrow> (\<exists>x. m = ok x \<and> f x = ok v)"
-  unfolding bind_def
   by (cases m; simp)
 
 lemma result_bind_ok_unit[simp]: "do {ok (); f y} = do {f y}"
-  unfolding bind_def
   by simp
 
 lemma result_bind_err_iff[simp]: "do { x\<leftarrow>m; f x } = err e \<longleftrightarrow> (m = err e \<or> (\<exists>x. m = ok x \<and> f x = err e))"
-  unfolding bind_def
   by (cases m; simp)
 
 lemma result_return_ok_iff[simp]: "return x = ok y \<longleftrightarrow> x = y"
-  unfolding return_def
+  by simp
+
+lemma result_let_in[simp]: "do { z \<leftarrow> (let x = y in (f x :: 'a result)); g z} = (let x = y in (do {z \<leftarrow> f x; g z }))"
   by simp
 
 end
@@ -93,40 +95,54 @@ end
 
 subsection "Weakest precondition simps"
 
+context
+  notes wp_def[simp] wp_ignore_err_def[simp] wp_never_err_def[simp]
+begin
+
 lemma wp_ok_iff[simp]: "wp (ok v) P E \<longleftrightarrow> (P v)"
-  unfolding wp_def
   by simp
 
-lemma wp_ok_ok_iff[simp]: "wp_ok (ok v) P \<longleftrightarrow> (P v)"
-  unfolding wp_ok_def
+lemma wp_ignore_err_ok_iff[simp]: "wp_ignore_err (ok v) P \<longleftrightarrow> (P v)"
+  by simp
+
+lemma wp_never_err_ok_iff[simp]: "wp_never_err (ok v) P \<longleftrightarrow> (P v)"
   by simp
 
 
 lemma wp_err_iff[simp]: "wp (err e) P E \<longleftrightarrow> (E e)"
-  unfolding wp_def
   by simp
 
-lemma wp_ok_err_iff[simp]: "wp_ok (err e) P \<longleftrightarrow> True"
-  unfolding wp_ok_def
+lemma wp_ignore_err_err_iff[simp]: "wp_ignore_err (err e) P \<longleftrightarrow> True"
+  by simp
+
+lemma wp_never_err_err_iff[simp]: "wp_never_err (err e) P \<longleftrightarrow> False"
   by simp
 
 
 lemma wp_return_iff[simp]: "wp (return x) P E \<longleftrightarrow> (P x)"
-  unfolding return_def wp_def
+  unfolding return_def
   by simp
 
-lemma wp_ok_return_iff[simp]: "wp_ok (return x) P \<longleftrightarrow> (P x)"
-  unfolding wp_ok_def
+lemma wp_ignore_err_return_iff[simp]: "wp_ignore_err (return x) P \<longleftrightarrow> (P x)"
+  unfolding return_def
   by simp
+
+lemma wp_never_err_return_iff[simp]: "wp_never_err (return x) P \<longleftrightarrow> (P x)"
+  unfolding return_def
+  by auto
 
 
 lemma wp_bind_iff[simp]: "wp (do {x \<leftarrow> m; f x}) P E \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp (f x) P E)) \<or> (\<exists>e. m = err e \<and> E e))"
-  unfolding wp_def bind_def
+  unfolding bind_def
   by (cases m; simp)
 
-lemma wp_ok_bind_iff[simp]: "wp_ok (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp_ok (f x) P)) \<or> (\<exists>e. m = err e))"
-  unfolding wp_ok_def
-  by simp
+lemma wp_ignore_err_bind_iff[simp]: "wp_ignore_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp_ignore_err (f x) P)) \<or> (\<exists>e. m = err e))"
+  unfolding bind_def
+  by (cases m; simp)
+
+lemma wp_never_err_bind_iff[simp]: "wp_never_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> (\<exists>x. m = ok x \<and> (wp_never_err (f x) P))"
+  unfolding bind_def
+  by (cases m; simp)
 
 
 lemma wp_case_option_iff[simp]: 
@@ -135,10 +151,16 @@ lemma wp_case_option_iff[simp]:
      (\<exists>v. c = Some v \<and> wp (g v) P E))"
   by (cases c; simp)
 
-lemma wp_ok_case_option_iff[simp]: 
-  "wp_ok (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((c = None \<and> wp_ok f P) \<or>
-     (\<exists>v. c = Some v \<and> wp_ok (g v) P))"
+lemma wp_ignore_err_case_option_iff[simp]: 
+  "wp_ignore_err (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((c = None \<and> wp_ignore_err f P) \<or>
+     (\<exists>v. c = Some v \<and> wp_ignore_err (g v) P))"
+  by (cases c; simp)
+
+lemma wp_never_err_case_option_iff[simp]: 
+  "wp_never_err (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((c = None \<and> wp_never_err f P) \<or>
+     (\<exists>v. c = Some v \<and> wp_never_err (g v) P))"
   by (cases c; simp)
 
 
@@ -148,12 +170,19 @@ lemma wp_case_result_iff[simp]:
      (\<exists>v. c = ok v \<and> wp (g v) P E))"
   by (cases c; simp)
 
-lemma wp_ok_case_result_iff[simp]: 
-  "wp_ok (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((\<exists>e. c = err e \<and> wp_ok (f e) P) \<or>
-     (\<exists>v. c = ok v \<and> wp_ok (g v) P))"
+lemma wp_ignore_err_case_result_iff[simp]: 
+  "wp_ignore_err (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((\<exists>e. c = err e \<and> wp_ignore_err (f e) P) \<or>
+     (\<exists>v. c = ok v \<and> wp_ignore_err (g v) P))"
   by (cases c; simp)
 
+lemma wp_never_err_case_result_iff[simp]: 
+  "wp_never_err (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
+    ((\<exists>e. c = err e \<and> wp_never_err (f e) P) \<or>
+     (\<exists>v. c = ok v \<and> wp_never_err (g v) P))"
+  by (cases c; simp)
+
+end
 
 (* TODO: MONADIC IF *)
 

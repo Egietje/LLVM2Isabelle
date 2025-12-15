@@ -76,6 +76,9 @@ subsection "State"
 
 type_synonym state = "llvm_register_model * llvm_memory_model * llvm_memory_model"
 
+definition empty_state :: "state" where
+  "empty_state = (empty_register_model, empty_memory_model, empty_memory_model)"
+
 definition get_value :: "llvm_register_model \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
   "get_value r v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register r re)"
 
@@ -296,5 +299,9 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
     (_, r) \<leftarrow> execute_blocks s None None is ls;
     return r
   }"
+
+lemma "wp (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0)) (\<lambda>e. False)"
+  unfolding empty_state_def
+  by (simp add: get_value_def)
 
 end

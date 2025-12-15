@@ -39,7 +39,7 @@ lemma register_set_independent_get: "n \<noteq> n' \<Longrightarrow> set_registe
   unfolding get_register_def set_register_def
   by (cases "Mapping.lookup r n'"; auto)
 
-lemma register_set_independent_get_wp: "n \<noteq> n' \<Longrightarrow> wp_ok (set_register r n' v) (\<lambda>r'. get_register r' n = get_register r n)"
+lemma register_set_independent_get_wp: "n \<noteq> n' \<Longrightarrow> wp_ignore_err (set_register r n' v) (\<lambda>r'. get_register r' n = get_register r n)"
   unfolding get_register_def set_register_def
   by auto
 
@@ -48,7 +48,7 @@ lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_regist
   unfolding set_register_def get_register_def
   by (auto split: if_splits simp add: option.case_eq_if)
 
-lemma register_set_get_wp: "wp_ok (do { r' \<leftarrow> set_register r n v; get_register r n }) ((=) v)"
+lemma register_set_get_wp: "wp_ignore_err (do { r' \<leftarrow> set_register r n v; get_register r n }) ((=) v)"
   unfolding set_register_def get_register_def
   by (simp add: option.case_eq_if)
 
@@ -57,7 +57,7 @@ lemma register_get_override: "get_register r n = ok v \<Longrightarrow> set_regi
   unfolding set_register_def get_register_def option.case_eq_if
   by (simp split: if_splits)
 
-lemma register_get_override_wp: "wp_ok (get_register r n) (\<lambda>_. set_register r n v = err register_override)"
+lemma register_get_override_wp: "wp_ignore_err (get_register r n) (\<lambda>_. set_register r n v = err register_override)"
   unfolding get_register_def set_register_def
   by auto
 
@@ -66,7 +66,7 @@ lemma register_set_override: "set_register r n v = ok r' \<Longrightarrow> set_r
   unfolding set_register_def option.case_eq_if
   by (auto split: if_splits)
 
-lemma register_set_override_wp: "wp_ok (set_register r n v) (\<lambda>r'. set_register r' n v' = err register_override)"
+lemma register_set_override_wp: "wp_ignore_err (set_register r n v) (\<lambda>r'. set_register r' n v' = err register_override)"
   unfolding get_register_def set_register_def
   by auto
 
