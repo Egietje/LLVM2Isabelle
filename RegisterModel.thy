@@ -25,6 +25,7 @@ definition empty_register_model :: "('n, 'v) register_model" where
 
 section "Lemmas"
 
+
 lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
   unfolding get_register_def empty_register_model_def
   by simp

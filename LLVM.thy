@@ -220,7 +220,8 @@ subsection "Instruction"
 fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
   (* Allocate new memory value on the stack, and set the specified register to its address. *)
   "execute_instruction (r, s, h) _ (alloca name type align) =
-    (let (s', a) = allocate_memory s in do {
+    (do {
+      (s', a) \<leftarrow> return (allocate_memory s);
       r' \<leftarrow> set_register r name (addr (saddr a));
       return (r', s', h)
     })"
@@ -300,8 +301,17 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
     return r
   }"
 
-lemma "wp (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0)) (\<lambda>e. False)"
+lemma "wp_never_err (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0))"
   unfolding empty_state_def
   by (simp add: get_value_def)
+
+lemma block_return_iff[simp]: "wp_ignore_err (execute_block s p (instrs, final))
+  (\<lambda>(s', r). case final of
+    ret _ _ \<Rightarrow> (\<exists>v. r = return_value v)
+  | br_i1 _ _ _ \<Rightarrow> (\<exists>l. r = branch_label l)
+  | br_label l \<Rightarrow> r = branch_label l)"
+  apply (cases "execute_block s p (instrs, final)"; simp)
+  apply (induction instrs arbitrary: s; auto)
+  by (cases final; auto)
 
 end

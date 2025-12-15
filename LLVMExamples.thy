@@ -80,8 +80,14 @@ define dso_local i32 @main() #0 {
   ret i32 %12
 }
 *)
+                         
+lemma "wp_never_err (execute_function empty_state simple_branching_main) (\<lambda>ret. True)"
+  by eval
 
-value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) simple_branching_main"
+(* apply (auto simp add: empty_state_def simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def execute_blocks.simps) *)
+(* DISCUSS: what kinda lemmas/simps am I missing? *)
+
+value "execute_function empty_state simple_branching_main"
 
 
 

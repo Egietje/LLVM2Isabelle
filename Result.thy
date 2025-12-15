@@ -42,6 +42,11 @@ definition wp_never_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Ri
   "wp_never_err m P = wp m P (\<lambda>x. False)"
 
 
+(* DISCUSS: Monadic if *)
+definition ifM :: "bool result \<Rightarrow> 'a result \<Rightarrow> 'a result \<Rightarrow> 'a result" where
+  "ifM p i e = do {b \<leftarrow> p; if b then i else e}"
+
+
 section "Lemmas"
 
 context
@@ -184,6 +189,5 @@ lemma wp_never_err_case_result_iff[simp]:
 
 end
 
-(* TODO: MONADIC IF *)
 
 end
