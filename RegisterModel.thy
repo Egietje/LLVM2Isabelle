@@ -25,7 +25,13 @@ definition empty_register_model :: "('n, 'v) register_model" where
 
 section "Lemmas"
 
-
+lemma set_register_intro[wp_intro]:
+  assumes "get_register r name = err unknown_register"
+  assumes "case set_register r name v of ok r' \<Rightarrow> wp_never_err (f r') Q | err e \<Rightarrow> False"
+  shows "wp_never_err (set_register r name v) (\<lambda>r'. wp_never_err (f r') Q)"
+  unfolding wp_never_err_def wp_def using assms apply (cases "set_register r name v") apply auto 
+  by (simp add: wp_def wp_never_err_def)
+                  
 lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
   unfolding get_register_def empty_register_model_def
   by simp

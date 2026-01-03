@@ -213,9 +213,11 @@ fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_label * llvm_value_ref)
     previous \<leftarrow> some_or_err l phi_no_previous_block;
     some_or_err (Mapping.lookup (Mapping.of_alist ls) previous) phi_label_not_found
   }"
+(*TODO look into direct alist lookup*)
 
 
 subsection "Instruction"
+
 
 fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
   (* Allocate new memory value on the stack, and set the specified register to its address. *)
@@ -258,6 +260,12 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
     r' \<leftarrow> set_register r register v';
     return (r', s, h)
   }"
+
+lemma "get_register r name = err unknown_register \<Longrightarrow> wp_never_err (execute_instruction (r,s,m) p (alloca name type align)) Q"
+  apply simp apply (intro wp_intro) apply auto subgoal for s' a apply (cases "set_register r name
+             (addr
+               (llvm_address.saddr
+ a))") using register_set_ok_unknown apply auto oops
 
 
 subsection "Blocks and functions"

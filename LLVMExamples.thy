@@ -82,6 +82,9 @@ define dso_local i32 @main() #0 {
 *)
                          
 lemma "wp_never_err (execute_function empty_state simple_branching_main) (\<lambda>ret. True)"
+  unfolding empty_state_def simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def 
+  apply (simp add: execute_blocks.simps)
+  apply (intro wp_intro)
   by eval
 
 (* apply (auto simp add: empty_state_def simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def execute_blocks.simps) *)

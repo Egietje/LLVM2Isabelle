@@ -32,22 +32,26 @@ fun some_or_err :: "'a option \<Rightarrow> error \<Rightarrow> 'a result" where
   "some_or_err (Some v) _ = ok v"
 | "some_or_err None e = err e"
 
+(*wp gen*)
 definition wp :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
   "wp m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
-
+(*wlp*)
 definition wp_ignore_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
   "wp_ignore_err m P = wp m P (\<lambda>x. True)"
-
+(*wp*)
 definition wp_never_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
   "wp_never_err m P = wp m P (\<lambda>x. False)"
-
+(* look into abbreviations *)
 
 (* DISCUSS: Monadic if *)
 definition ifM :: "bool result \<Rightarrow> 'a result \<Rightarrow> 'a result \<Rightarrow> 'a result" where
   "ifM p i e = do {b \<leftarrow> p; if b then i else e}"
 
 
+
 section "Lemmas"
+
+named_theorems wp_intro
 
 context
   notes bind_def[simp] return_def[simp]
@@ -135,17 +139,23 @@ lemma wp_ignore_err_return_iff[simp]: "wp_ignore_err (return x) P \<longleftrigh
 lemma wp_never_err_return_iff[simp]: "wp_never_err (return x) P \<longleftrightarrow> (P x)"
   unfolding return_def
   by auto
+lemmas [wp_intro] = wp_never_err_return_iff[THEN iffD2]
 
-
+(* wp x m; f x = wp m (wp f x) *)
 lemma wp_bind_iff[simp]: "wp (do {x \<leftarrow> m; f x}) P E \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp (f x) P E)) \<or> (\<exists>e. m = err e \<and> E e))"
   unfolding bind_def
   by (cases m; simp)
+
+lemma wp_never_err_bind'[simp]: "wp_never_err (do {x\<leftarrow>m; f x}) P \<longleftrightarrow> (wp_never_err m (\<lambda>x. wp_never_err (f x) P))"
+  unfolding bind_def
+  by (cases m; simp)
+lemmas [wp_intro] = wp_never_err_bind'[THEN iffD2]
 
 lemma wp_ignore_err_bind_iff[simp]: "wp_ignore_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp_ignore_err (f x) P)) \<or> (\<exists>e. m = err e))"
   unfolding bind_def
   by (cases m; simp)
 
-lemma wp_never_err_bind_iff[simp]: "wp_never_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> (\<exists>x. m = ok x \<and> (wp_never_err (f x) P))"
+lemma wp_never_err_bind_iff[wp_intro]: "wp_never_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> (\<exists>x. m = ok x \<and> (wp_never_err (f x) P))"
   unfolding bind_def
   by (cases m; simp)
 
@@ -167,6 +177,7 @@ lemma wp_never_err_case_option_iff[simp]:
     ((c = None \<and> wp_never_err f P) \<or>
      (\<exists>v. c = Some v \<and> wp_never_err (g v) P))"
   by (cases c; simp)
+lemmas [wp_intro] = wp_never_err_case_option_iff[THEN iffD2]
 
 
 lemma wp_case_result_iff[simp]: 
@@ -187,7 +198,22 @@ lemma wp_never_err_case_result_iff[simp]:
      (\<exists>v. c = ok v \<and> wp_never_err (g v) P))"
   by (cases c; simp)
 
+
+lemma wp_never_err_if[wp_intro]:
+  assumes "b \<Longrightarrow> wp_never_err i Q"
+  assumes "\<not>b \<Longrightarrow> wp_never_err e Q"
+  shows "wp_never_err (if b then i else e) Q"
+  using assms by auto
+
+lemma wp_never_err_product_case[wp_intro]:
+  assumes "\<And>b c. a = (b,c) \<Longrightarrow> wp_never_err (f b c) Q"
+  shows "wp_never_err (case a of (b,c) \<Rightarrow> f b c) Q"
+  using assms apply (cases a) by simp
+
 end
+
+
+
 
 
 end
