@@ -261,10 +261,11 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
   }"
 
 lemma "get_register r name = err unknown_register \<Longrightarrow> wp_never_err (execute_instruction (r,s,m) p (alloca name type align)) Q"
-  apply simp apply (intro wp_intro) apply auto subgoal for s' a apply (cases "set_register r name
-             (addr
-               (llvm_address.saddr
- a))") using register_set_ok_unknown apply auto oops
+  apply (simp only: execute_instruction.simps(1))
+  apply (intro wp_intro)
+  using register_set_ok_unknown apply fast
+  
+  oops
 
 
 subsection "Blocks and functions"
