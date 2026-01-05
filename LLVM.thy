@@ -103,6 +103,17 @@ fun store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointe
     store_to_stack_or_heap (r, s, m) ad val
   }"
 
+lemma store_value_ok_if[wp_intro]:
+  assumes "(\<exists>a ad val s' p. pointer = ptr p \<and> get_value r p = ok a \<and> a = addr ad \<and> get_value r v = ok val \<and> store_to_stack_or_heap (r, s, m) ad val = ok s')"
+  shows "(\<exists>s'. store_value (r, s, m) v pointer = ok s')"
+  using assms by auto
+
+lemma store_value_intro[wp_intro]:
+  assumes "\<exists>s'. store_value s v p = ok s'"
+  assumes "\<And>s'. store_value s v p = ok s' \<Longrightarrow> wp_never_err (f s') Q"
+  shows "wp_never_err (store_value s v p) (\<lambda>s'. wp_never_err (f s') Q)"
+  using assms by auto
+
 
 subsection "Load instruction helpers"
 
@@ -265,6 +276,12 @@ lemma "get_register r name = err unknown_register \<Longrightarrow> wp_never_err
   apply (intro wp_intro)
   using register_set_ok_unknown apply fast
   
+  oops
+
+lemma "wp_never_err (execute_instruction (r,s,m) p (store type value pointer align)) Q"
+  apply (simp only: execute_instruction.simps(2))
+  apply (intro wp_intro)
+  apply auto
   oops
 
 
