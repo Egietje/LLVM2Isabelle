@@ -1,5 +1,5 @@
 theory LLVM                                                                                          
-  imports "Word_Lib/Word_64" "Word_Lib/Word_32" "HOL-Library.AList_Mapping" "MemoryModel" "RegisterModel"
+  imports "Word_Lib/Word_64" "Word_Lib/Word_32" "MemoryModel" "RegisterModel"
 begin
 
 section "AST"
@@ -211,9 +211,8 @@ subsection "Phi instruction helpers"
 fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_label * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
   "phi_lookup l ls = do {
     previous \<leftarrow> some_or_err l phi_no_previous_block;
-    some_or_err (Mapping.lookup (Mapping.of_alist ls) previous) phi_label_not_found
+    some_or_err (map_of ls previous) phi_label_not_found
   }"
-(*TODO look into direct alist lookup*)
 
 
 subsection "Instruction"
