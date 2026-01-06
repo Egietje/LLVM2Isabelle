@@ -83,6 +83,8 @@ definition get_value :: "llvm_register_model \<Rightarrow> llvm_value_ref \<Righ
   "get_value r v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register r re)"
 
 
+
+
 subsection "Store instruction helpers"
 
 fun store_to_stack_or_heap :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value \<Rightarrow> state result" where
@@ -103,19 +105,38 @@ fun store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointe
     store_to_stack_or_heap (r, s, m) ad val
   }"
 
+definition abs_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value option option" where
+  "abs_memory = undefined"
+
+definition abs_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
+  "abs_value = undefined"
+
 lemma store_value_ok_if[wp_intro]:
   assumes "(\<exists>a ad val s' p. pointer = ptr p \<and> get_value r p = ok a \<and> a = addr ad \<and> get_value r v = ok val \<and> store_to_stack_or_heap (r, s, m) ad val = ok s')"
   shows "(\<exists>s'. store_value (r, s, m) v pointer = ok s')"
   using assms by auto
 
-lemma store_value_intro[wp_intro]:
+lemma store_value_intro:
   assumes "\<exists>s'. store_value s v p = ok s'"
-  assumes "\<And>s'. store_value s v p = ok s' \<Longrightarrow> wp_never_err (f s') Q"
-  shows "wp_never_err (store_value s v p) (\<lambda>s'. wp_never_err (f s') Q)"
+  assumes "\<And>s'. store_value s v p = ok s' \<Longrightarrow> Q s'"
+  shows "wp_never_err (store_value s v p) Q"
   using assms by auto
+
+lemma store_value_abs:
+  assumes "abs_value s vr = Some v"
+  assumes "abs_value s pr = Some (addr a)"
+  assumes "abs_memory s a \<noteq> None"
+  shows "wp_never_err (store_value s vr p) (\<lambda>s'. abs_value s' = abs_value s \<and> abs_memory s' = (abs_memory s)(a := Some (Some v)))"
+  sorry
+
+lemmas [wp_intro] = store_value_abs[THEN consequence]
+
+thm exE
 
 
 subsection "Load instruction helpers"
+
+
 
 fun load_from_stack_or_heap :: "llvm_memory_model \<Rightarrow> llvm_memory_model \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
   "load_from_stack_or_heap s h (saddr a) = get_memory s a"
@@ -278,11 +299,12 @@ lemma "get_register r name = err unknown_register \<Longrightarrow> wp_never_err
   
   oops
 
-lemma "wp_never_err (execute_instruction (r,s,m) p (store type value pointer align)) Q"
+lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> abs_memory s a \<noteq> None \<Longrightarrow>
+    wp_never_err (execute_instruction s p (store type value pointer align))
+    (\<lambda>x. (abs_value x = abs_value s \<and> abs_memory x = (abs_memory s)(a \<mapsto> Some v)))"
   apply (simp only: execute_instruction.simps(2))
   apply (intro wp_intro)
-  apply auto
-  oops
+  by simp_all
 
 
 subsection "Blocks and functions"

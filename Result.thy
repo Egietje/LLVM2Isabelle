@@ -212,6 +212,11 @@ lemma wp_never_err_product_case[wp_intro]:
 
 end
 
+lemma consequence:
+  assumes "wp_never_err x Q"
+  assumes "\<And>x. Q x \<Longrightarrow> Q' x"
+  shows "wp_never_err x Q'"
+  using assms wp_never_err_def wp_def apply (cases x) by auto
 
 
 

@@ -27,11 +27,11 @@ section "Lemmas"
 
 lemma set_register_intro[wp_intro]:
   assumes "\<exists>r'. set_register r name v = ok r'"
-  assumes "\<And>r'. set_register r name v = ok r' \<Longrightarrow> wp_never_err (f r') Q"
-  shows "wp_never_err (set_register r name v) (\<lambda>r'. wp_never_err (f r') Q)"
-  unfolding wp_never_err_def wp_def using assms apply (cases "set_register r name v") apply auto 
-  by (simp add: wp_def wp_never_err_def)
-                  
+  assumes "\<And>r'. set_register r name v = ok r' \<Longrightarrow> Q r'"
+  shows "wp_never_err (set_register r name v) Q"
+  using assms
+  by auto
+
 lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
   unfolding get_register_def empty_register_model_def
   by simp
