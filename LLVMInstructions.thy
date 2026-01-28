@@ -35,8 +35,9 @@ lemma store_value_ok_if[wp_intro]:
 lemma store_value_intro:
   assumes "\<exists>s'. store_value s v p = ok s'"
   assumes "\<And>s'. store_value s v p = ok s' \<Longrightarrow> Q s'"
-  shows "wp_never_err (store_value s v p) Q"
-  using assms by auto
+  shows "wp (store_value s v p) Q"
+  using assms 
+  by (auto; intro wp_intro; simp)
 
 
 fun load_from_stack_or_heap :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
@@ -193,18 +194,19 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
     return (r', s, h)
   }"
 
-lemma "get_register r name = err unknown_register \<Longrightarrow> wp_never_err (execute_instruction (r,s,m) p (alloca name type align)) Q"
+lemma "get_register r name = err unknown_register \<Longrightarrow> wp (execute_instruction (r,s,m) p (alloca name type align)) Q"
   apply (simp only: execute_instruction.simps(1))
   apply (intro wp_intro)
-  using register_set_ok_unknown apply fast
+  apply simp
+  using register_set_ok_unknown
   
   oops
 
-lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> abs_memory s a \<noteq> None \<Longrightarrow>
-    wp_never_err (execute_instruction s p (store type value pointer align))
-    (\<lambda>x. (abs_value x = abs_value s \<and> abs_memory x = (abs_memory s)(a \<mapsto> Some v)))"
+lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> proof_single_memory s a \<noteq> None \<Longrightarrow>
+    wp (execute_instruction s p (store type value pointer align))
+    (\<lambda>x. (abs_value x = abs_value s \<and> proof_single_memory x = (proof_single_memory s)(a \<mapsto> Some v)))"
   apply (simp only: execute_instruction.simps(2))
-  apply (intro wp_intro)
+  apply (intro wp_intro; simp add: wp_intro)
   by simp_all
 
 

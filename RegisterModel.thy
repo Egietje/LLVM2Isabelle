@@ -25,6 +25,14 @@ definition empty_register_model :: "('n, 'v) register_model" where
 
 section "Lemmas"
 
+lemma wp_set_register_intro[wp_intro]:
+  assumes "get_register r n = err unknown_register"
+  assumes "\<And>r'. set_register r n v = ok r' \<Longrightarrow> Q r'"
+  shows "wp (set_register r n v) Q"
+  using assms
+  unfolding set_register_def get_register_def
+  apply (cases "Mapping.lookup r n"; simp)
+  by (intro wp_intro; simp)
 
 
 lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
