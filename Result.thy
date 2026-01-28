@@ -32,20 +32,12 @@ fun some_or_err :: "'a option \<Rightarrow> error \<Rightarrow> 'a result" where
   "some_or_err (Some v) _ = ok v"
 | "some_or_err None e = err e"
 
-(*wp gen*)
-definition wp :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
-  "wp m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
-(*wlp*)
-definition wp_ignore_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
-  "wp_ignore_err m P = wp m P (\<lambda>x. True)"
-(*wp*)
-definition wp_never_err :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
-  "wp_never_err m P = wp m P (\<lambda>x. False)"
-(* look into abbreviations *)
+definition wp_gen :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
+  "wp_gen m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
 
-(* DISCUSS: Monadic if *)
-definition ifM :: "bool result \<Rightarrow> 'a result \<Rightarrow> 'a result \<Rightarrow> 'a result" where
-  "ifM p i e = do {b \<leftarrow> p; if b then i else e}"
+abbreviation "wlp m P \<equiv> wp_gen m P (\<lambda>x. True)"
+
+abbreviation "wp m P \<equiv> wp_gen m P (\<lambda>x. False)"
 
 
 
@@ -105,120 +97,79 @@ end
 subsection "Weakest precondition simps"
 
 context
-  notes wp_def[simp] wp_ignore_err_def[simp] wp_never_err_def[simp]
+  notes wp_gen_def[simp]
 begin
+lemma consequence:
+  assumes "wp_gen x Q E"
+  assumes "\<And>x. Q x \<Longrightarrow> Q' x"
+  assumes "\<And>e. E e \<Longrightarrow> E' e"
+  shows "wp_gen x Q' E'"
+  using assms
+  by (simp split: result.splits)
 
-lemma wp_ok_iff[simp]: "wp (ok v) P E \<longleftrightarrow> (P v)"
+lemma wp_ok_intro[wp_intro]:
+  assumes "Q x"
+  shows "wp_gen (ok x) Q E"
+  using assms
   by simp
 
-lemma wp_ignore_err_ok_iff[simp]: "wp_ignore_err (ok v) P \<longleftrightarrow> (P v)"
+lemma wp_err_intro[wp_intro]:
+  assumes "E e"
+  shows "wp_gen (err e) Q E"
+  using assms
   by simp
 
-lemma wp_never_err_ok_iff[simp]: "wp_never_err (ok v) P \<longleftrightarrow> (P v)"
-  by simp
+lemma wp_return_intro[wp_intro]:
+  assumes "Q x"
+  shows "wp_gen (return x) Q E"
+  using assms
+  by (simp add: return_def)
 
+lemma wp_assert_intro[wp_intro]:
+  assumes "b \<Longrightarrow> wp_gen f P E"
+  assumes "\<not>b \<Longrightarrow> E e"
+  shows "wp_gen (do {assert e b; f}) P E"
+  using assms
+  by (auto split: result.splits simp: bind_def) 
 
-lemma wp_err_iff[simp]: "wp (err e) P E \<longleftrightarrow> (E e)"
-  by simp
+lemma wp_bind_intro[wp_intro]:
+  assumes "wp_gen m (\<lambda>x. wp_gen (f x) P E) E"
+  shows "wp_gen (do {x\<leftarrow>m; f x}) P E"
+  using assms
+  by (cases m; simp add: bind_def)
 
-lemma wp_ignore_err_err_iff[simp]: "wp_ignore_err (err e) P \<longleftrightarrow> True"
-  by simp
-
-lemma wp_never_err_err_iff[simp]: "wp_never_err (err e) P \<longleftrightarrow> False"
-  by simp
-
-
-lemma wp_return_iff[simp]: "wp (return x) P E \<longleftrightarrow> (P x)"
-  unfolding return_def
-  by simp
-
-lemma wp_ignore_err_return_iff[simp]: "wp_ignore_err (return x) P \<longleftrightarrow> (P x)"
-  unfolding return_def
-  by simp
-
-lemma wp_never_err_return_iff[simp]: "wp_never_err (return x) P \<longleftrightarrow> (P x)"
-  unfolding return_def
+lemma wp_case_option_intro[wp_intro]:
+  assumes "(c = None \<and> wp_gen f P E) \<or> (\<exists>v. c = Some v \<and> wp_gen (g v) P E)"
+  shows "wp_gen (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P E"
+  using assms
   by auto
-lemmas [wp_intro] = wp_never_err_return_iff[THEN iffD2]
 
-(* wp x m; f x = wp m (wp f x) *)
-lemma wp_bind_iff[simp]: "wp (do {x \<leftarrow> m; f x}) P E \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp (f x) P E)) \<or> (\<exists>e. m = err e \<and> E e))"
-  unfolding bind_def
-  by (cases m; simp)
+lemma wp_case_result_intro[wp_intro]:
+  assumes "(\<exists>e. c = err e \<and> wp_gen (f e) P E) \<or> (\<exists>v. c = ok v \<and> wp_gen (g v) P E)"
+  shows "wp_gen (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P E"
+  using assms
+  by auto
 
-lemma wp_never_err_bind'[simp]: "wp_never_err (do {x\<leftarrow>m; f x}) P \<longleftrightarrow> (wp_never_err m (\<lambda>x. wp_never_err (f x) P))"
-  unfolding bind_def
-  by (cases m; simp)
-lemmas [wp_intro] = wp_never_err_bind'[THEN iffD2]
+lemma wp_if_intro[wp_intro]:
+  assumes "b \<Longrightarrow> wp_gen i Q E"
+  assumes "\<not>b \<Longrightarrow> wp_gen e Q E"
+  shows "wp_gen (if b then i else e) Q E"
+  using assms
+  by auto
 
-lemma wp_ignore_err_bind_iff[simp]: "wp_ignore_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> ((\<exists>x. m = ok x \<and> (wp_ignore_err (f x) P)) \<or> (\<exists>e. m = err e))"
-  unfolding bind_def
-  by (cases m; simp)
+lemma wp_case_product_intro[wp_intro]:
+  assumes "\<And>b c. a = (b,c) \<Longrightarrow> wp_gen (f b c) Q E"
+  shows "wp_gen (case a of (b,c) \<Rightarrow> f b c) Q E"
+  using assms
+  by (cases a; simp)
 
-lemma wp_never_err_bind_iff[wp_intro]: "wp_never_err (do {x \<leftarrow> m; f x}) P \<longleftrightarrow> (\<exists>x. m = ok x \<and> (wp_never_err (f x) P))"
-  unfolding bind_def
-  by (cases m; simp)
-
-
-lemma wp_case_option_iff[simp]: 
-  "wp (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P E \<longleftrightarrow> 
-    ((c = None \<and> wp f P E) \<or>
-     (\<exists>v. c = Some v \<and> wp (g v) P E))"
-  by (cases c; simp)
-
-lemma wp_ignore_err_case_option_iff[simp]: 
-  "wp_ignore_err (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((c = None \<and> wp_ignore_err f P) \<or>
-     (\<exists>v. c = Some v \<and> wp_ignore_err (g v) P))"
-  by (cases c; simp)
-
-lemma wp_never_err_case_option_iff[simp]: 
-  "wp_never_err (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((c = None \<and> wp_never_err f P) \<or>
-     (\<exists>v. c = Some v \<and> wp_never_err (g v) P))"
-  by (cases c; simp)
-lemmas [wp_intro] = wp_never_err_case_option_iff[THEN iffD2]
-
-
-lemma wp_case_result_iff[simp]: 
-  "wp (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P E \<longleftrightarrow> 
-    ((\<exists>e. c = err e \<and> wp (f e) P E) \<or>
-     (\<exists>v. c = ok v \<and> wp (g v) P E))"
-  by (cases c; simp)
-
-lemma wp_ignore_err_case_result_iff[simp]: 
-  "wp_ignore_err (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((\<exists>e. c = err e \<and> wp_ignore_err (f e) P) \<or>
-     (\<exists>v. c = ok v \<and> wp_ignore_err (g v) P))"
-  by (cases c; simp)
-
-lemma wp_never_err_case_result_iff[simp]: 
-  "wp_never_err (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P \<longleftrightarrow> 
-    ((\<exists>e. c = err e \<and> wp_never_err (f e) P) \<or>
-     (\<exists>v. c = ok v \<and> wp_never_err (g v) P))"
-  by (cases c; simp)
-
-
-lemma wp_never_err_if[wp_intro]:
-  assumes "b \<Longrightarrow> wp_never_err i Q"
-  assumes "\<not>b \<Longrightarrow> wp_never_err e Q"
-  shows "wp_never_err (if b then i else e) Q"
-  using assms by auto
-
-lemma wp_never_err_product_case[wp_intro]:
-  assumes "\<And>b c. a = (b,c) \<Longrightarrow> wp_never_err (f b c) Q"
-  shows "wp_never_err (case a of (b,c) \<Rightarrow> f b c) Q"
-  using assms apply (cases a) by simp
+lemma wp_result_intro:
+  assumes "\<And>x. f = ok x \<Longrightarrow> Q x"
+  assumes "\<And>e. f = err e \<Longrightarrow> E e"
+  shows "wp_gen f Q E"
+  using assms
+  by (cases f; simp)
 
 end
-
-lemma consequence:
-  assumes "wp_never_err x Q"
-  assumes "\<And>x. Q x \<Longrightarrow> Q' x"
-  shows "wp_never_err x Q'"
-  using assms wp_never_err_def wp_def apply (cases x) by auto
-
-
-
 
 end

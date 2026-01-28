@@ -234,7 +234,7 @@ partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_label opt
       (case br of
         return_value v \<Rightarrow> ok (s', Some v)
       | branch_label l \<Rightarrow>
-        (case Mapping.lookup labeled_blocks l of
+        (case map_of labeled_blocks l of
           None \<Rightarrow> err unknown_label
         | Some b' \<Rightarrow> execute_blocks s' current (Some l) b' labeled_blocks
         )

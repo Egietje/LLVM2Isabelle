@@ -52,7 +52,7 @@ subsection "Blocks, functions, programs"
 
 type_synonym llvm_instruction_block = "(llvm_instruction list * llvm_terminator_instruction)"
 
-type_synonym llvm_labeled_blocks = "(llvm_label, llvm_instruction_block) mapping"
+type_synonym llvm_labeled_blocks = "(llvm_label * llvm_instruction_block) list"
 
 datatype llvm_block_return = return_value llvm_value
                            | branch_label llvm_label

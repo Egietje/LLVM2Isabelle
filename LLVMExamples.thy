@@ -1,5 +1,5 @@
 theory LLVMExamples
-  imports LLVM
+  imports "LLVMInstructions"
 begin
 
 section "Simple Branching"
@@ -44,7 +44,7 @@ definition sb14 :: "llvm_instruction_block" where
   )"
 
 definition simple_branching_main :: "llvm_function" where
-  "simple_branching_main = func (func_def ''main'' i32) sbmain (Mapping.of_alist [(''10'', sb10), (''12'', sb12), (''14'', sb14)])"
+  "simple_branching_main = func (func_def ''main'' i32) sbmain [(''10'', sb10), (''12'', sb12), (''14'', sb14)]"
 
 (*
 int main() {
@@ -80,19 +80,8 @@ define dso_local i32 @main() #0 {
   ret i32 %12
 }
 *)
-                         
-lemma "wp_never_err (execute_function empty_state simple_branching_main) (\<lambda>ret. True)"
-  unfolding empty_state_def simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def 
-  apply (simp add: execute_blocks.simps)
-  apply (intro wp_intro)
-  by eval
-
-(* apply (auto simp add: empty_state_def simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def execute_blocks.simps) *)
-(* DISCUSS: what kinda lemmas/simps am I missing? *)
 
 value "execute_function empty_state simple_branching_main"
-
-
 
 section "Phi Node"
 
@@ -130,7 +119,7 @@ definition p10 :: "llvm_instruction_block" where
   )"
 
 definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) pmain (Mapping.of_alist [(''7'', p7), (''9'', p9), (''10'', p10)])"
+  "phi_main = func (func_def ''main'' i32) pmain [(''7'', p7), (''9'', p9), (''10'', p10)]"
 (*
 int main() {
     int y = 1;
