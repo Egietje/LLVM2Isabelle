@@ -196,10 +196,10 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
 
 lemma "get_register r name = err unknown_register \<Longrightarrow> wp (execute_instruction (r,s,m) p (alloca name type align)) Q"
   apply (simp only: execute_instruction.simps(1))
+  apply (rule wp_intro)
+  apply (rule wp_intro(15))
   apply (intro wp_intro)
-  apply simp
-  using register_set_ok_unknown
-  
+  apply auto
   oops
 
 lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> proof_single_memory s a \<noteq> None \<Longrightarrow>
@@ -251,11 +251,13 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
     return r
   }"
 
-lemma "wp_never_err (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0))"
-  unfolding empty_state_def
+lemma "wp (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0))"
+  unfolding empty_state_def empty_register_model_def empty_memory_model_def
+  apply simp
+  apply (intro wp_intro)
   by (simp add: get_value_def)
 
-lemma block_return_iff[simp]: "wp_ignore_err (execute_block s p (instrs, final))
+lemma block_return_iff[simp]: "wlp (execute_block s p (instrs, final))
   (\<lambda>(s', r). case final of
     ret _ _ \<Rightarrow> (\<exists>v. r = return_value v)
   | br_i1 _ _ _ \<Rightarrow> (\<exists>l. r = branch_label l)

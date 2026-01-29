@@ -94,7 +94,7 @@ lemma result_let_in[simp]: "do { z \<leftarrow> (let x = y in (f x :: 'a result)
 end
 
 
-subsection "Weakest precondition simps"
+subsection "Weakest precondition intro rules"
 
 context
   notes wp_gen_def[simp]
@@ -107,19 +107,19 @@ lemma consequence:
   using assms
   by (simp split: result.splits)
 
-lemma wp_ok_intro[wp_intro]:
+lemma wp_ok_intro[wp_intro, simp]:
   assumes "Q x"
   shows "wp_gen (ok x) Q E"
   using assms
   by simp
 
-lemma wp_err_intro[wp_intro]:
+lemma wp_err_intro[wp_intro, simp]:
   assumes "E e"
   shows "wp_gen (err e) Q E"
   using assms
   by simp
 
-lemma wp_return_intro[wp_intro]:
+lemma wp_return_intro[wp_intro, simp]:
   assumes "Q x"
   shows "wp_gen (return x) Q E"
   using assms

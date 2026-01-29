@@ -108,14 +108,6 @@ lemma memory_allocate_get_uninitialized: "allocate_memory m = (m', i) \<Longrigh
 
 subsection "Set"
 
-lemma wp_set_memory_intro[wp_intro]:
-  assumes "valid_memory_address m a"
-  assumes "\<And>m'. set_memory m a v = ok m' \<Longrightarrow> Q m'"
-  shows "wp (set_memory m a v) Q"
-  using assms
-  unfolding set_memory_def
-  by (intro wp_intro; simp)
-
 lemma memory_set_invalid: "\<not>valid_memory_address m a \<Longrightarrow> set_memory m a v = err unallocated_address"
   unfolding set_memory_def
   by simp
@@ -128,7 +120,7 @@ lemma memory_set_ok_valid: "set_memory m a v = ok m' \<Longrightarrow> valid_mem
 
 lemma memory_set_ok_valid_wlp: "wlp (set_memory m a v) (\<lambda> m'. valid_memory_address m' a \<and> valid_memory_address m a)"
   unfolding set_memory_def valid_memory_address_def
-  by (simp add: wp_intro)
+  by (intro wp_intro; simp)
 
 
 lemma memory_set_override: "set_memory m i v = ok m' \<Longrightarrow> set_memory m' i v' = ok m'' \<Longrightarrow> get_memory m'' i = ok v'"
@@ -143,7 +135,7 @@ lemma memory_set_override_wlp:
     m'' \<leftarrow> set_memory m' a v2;
     get_memory m'' a}) (\<lambda>v. v = v2)"
   unfolding set_memory_def get_memory_def valid_memory_address_def
-  by (simp add: wp_intro)
+  by (intro wp_intro; simp)
 
 
 lemma memory_set_identity: "get_memory m i = ok v \<Longrightarrow> set_memory m i v = ok m' \<Longrightarrow> m = m'"
@@ -158,7 +150,6 @@ lemma memory_set_identity_wlp: "wlp (do { v \<leftarrow> get_memory m a; set_mem
   unfolding get_memory_def set_memory_def valid_memory_address_def
   apply (intro wp_intro; simp)
   apply (cases "m!a"; simp)
-  apply (intro wp_intro; simp)
   apply (intro wp_intro)
   using list_update_id
   by metis
@@ -172,7 +163,6 @@ lemma memory_set_get: "set_memory m i v = ok m' \<Longrightarrow> get_memory m' 
 
 lemma memory_set_get_wlp: "wlp (do {m' \<leftarrow> set_memory m a v; get_memory m' a}) ((=) v)"
   unfolding set_memory_def get_memory_def valid_memory_address_def
-  apply (intro wp_intro; simp)
   by (intro wp_intro; simp)
 
 
