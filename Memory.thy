@@ -4,27 +4,74 @@ begin
 
 section "Simps"
 
-lemma proof_single_memory_some_some_iff[simp]:
+named_theorems proof_single_memory_simps
+
+lemma proof_single_memory_some_some_iff[proof_single_memory_simps]:
   "proof_single_memory s a = Some (Some v) \<longleftrightarrow> valid_memory_address s a \<and> s!a = mem_val v"
   unfolding get_memory_def proof_single_memory_def valid_memory_address_def
   by (cases "s!a"; simp)
 
-lemma proof_single_memory_update[simp]:
+lemma proof_memory_some_some_iff_heap[simp]:
+  "proof_memory (r,s,h) (haddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address h a \<and> h!a = mem_val v"
+  using proof_single_memory_some_some_iff
+  by simp
+
+lemma proof_single_memory_some_some_iff_stack[simp]:
+  "proof_memory (r,s,h) (saddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address s a \<and> s!a = mem_val v"
+  using proof_single_memory_some_some_iff
+  by simp
+
+
+lemma proof_single_memory_update[proof_single_memory_simps]:
   assumes "proof_single_memory s a \<noteq> None"
   shows "proof_single_memory (s[a := mem_val v]) = (proof_single_memory s)(a := Some (Some v))"
   using assms
   unfolding proof_single_memory_def valid_memory_address_def
   by (auto split: if_splits)
 
-lemma proof_single_memory_none_iff[simp]:
+lemma proof_memory_update_heap[simp]:
+  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
+  shows "\<And>a'. proof_memory (r,s,h[a := mem_val v]) a' = ((proof_memory (r,s,h))((haddr a) := Some (Some v))) a'"
+  subgoal for a'
+  using assms proof_single_memory_update
+  by (cases a'; fastforce)
+  done
+
+lemma proof_memory_update_stack[simp]:
+  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
+  shows "\<And>a'. proof_memory (r,s[a := mem_val v],h) a' = ((proof_memory (r,s,h))((saddr a) := Some (Some v))) a'"
+  subgoal for a'
+  using assms proof_single_memory_update
+  by (cases a'; fastforce)
+  done
+
+
+lemma proof_single_memory_none_iff[proof_single_memory_simps]:
   "\<not>valid_memory_address s a \<longleftrightarrow> proof_single_memory s a = None"
   unfolding proof_single_memory_def valid_memory_address_def
   by (cases "s!a"; simp)
 
-lemma proof_single_memory_not_none_iff[simp]:
+lemma proof_memory_none_iff_heap[simp]:
+  "\<not>valid_memory_address h a \<longleftrightarrow> proof_memory (r,s,h) (haddr a) = None"
+  using proof_single_memory_none_iff by simp
+
+lemma proof_memory_none_iff_stack[simp]:
+  "\<not>valid_memory_address s a \<longleftrightarrow> proof_memory (r,s,h) (saddr a) = None"
+  using proof_single_memory_none_iff by simp
+
+
+lemma proof_single_memory_not_none_iff[proof_single_memory_simps]:
   "valid_memory_address s a \<longleftrightarrow> proof_single_memory s a \<noteq> None"
   unfolding proof_single_memory_def valid_memory_address_def
   by (cases "s!a"; simp)
+
+lemma proof_memory_not_none_iff_heap[simp]:
+  "valid_memory_address h a \<longleftrightarrow> proof_memory (r,s,h) (haddr a) \<noteq> None"
+  using proof_single_memory_not_none_iff by simp
+
+lemma proof_memory_not_none_iff_stack[simp]:
+  "valid_memory_address s a \<longleftrightarrow> proof_memory (r,s,h) (saddr a) \<noteq> None"
+  using proof_single_memory_not_none_iff by simp
 
 
 
@@ -38,31 +85,81 @@ lemma wp_case_memory_value_intro[wp_intro]:
   using assms
   by (cases x; simp)
 
-lemma wp_get_memory_intro[wp_intro]:
+
+lemma wp_get_memory_intro_single:
   assumes "proof_single_memory s a = Some (Some x)"
   assumes "Q x"
   shows "wp (get_memory s a) Q"
   using assms
   unfolding get_memory_def
-  by (intro wp_intro; simp)
+  by (intro wp_intro; simp add: proof_single_memory_simps)
 
-lemma wp_set_memory_intro[wp_intro]:
+lemma wp_get_heap_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (haddr a) = Some (Some x)"
+  assumes "Q x"
+  shows "wp (get_memory h a) Q"
+  using assms wp_get_memory_intro_single
+  by simp
+
+lemma wp_get_stack_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (saddr a) = Some (Some x)"
+  assumes "Q x"
+  shows "wp (get_memory s a) Q"
+  using assms wp_get_memory_intro_single
+  by simp
+
+
+lemma wp_set_memory_intro_single:
   assumes "proof_single_memory s a \<noteq> None"
   assumes "\<And>s'. proof_single_memory s' = (proof_single_memory s)(a := Some (Some v)) \<Longrightarrow> Q s'"
   shows "wp (set_memory s a v) Q"
   using assms
   unfolding set_memory_def
-  by (intro wp_intro; simp)
+  by (intro wp_intro; simp add: proof_single_memory_simps)
 
-lemma wp_free_memory_intro[wp_intro]:
+lemma wp_set_heap_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
+  assumes "\<And>h'. proof_memory (r,s,h') = (proof_memory (r,s,h))((haddr a) := Some (Some v)) \<Longrightarrow> Q h'"
+  shows "wp (set_memory h a v) Q"
+  using assms
+  unfolding set_memory_def
+  apply (intro wp_intro; simp add: proof_single_memory_simps)
+  using proof_memory_update_heap by fastforce
+
+lemma wp_set_stack_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
+  assumes "\<And>s'. proof_memory (r,s',h) = (proof_memory (r,s,h))((saddr a) := Some (Some v)) \<Longrightarrow> Q s'"
+  shows "wp (set_memory s a v) Q"
+  using assms
+  unfolding set_memory_def
+  apply (intro wp_intro; simp add: proof_single_memory_simps)
+  using proof_memory_update_stack by fastforce
+
+
+lemma wp_free_memory_intro_single:
   assumes "proof_single_memory s a \<noteq> None"
   assumes "\<And>s'. free_memory s a = ok s' \<Longrightarrow> Q s'"
   shows "wp (free_memory s a) Q"
   using assms
   unfolding free_memory_def
-  by (intro wp_intro; simp)
+  by (intro wp_intro; simp add: proof_single_memory_simps)
 
-lemma wp_allocate_memory_intro[wp_intro]:
+lemma wp_free_heap_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
+  assumes "\<And>h'. free_memory h a = ok h' \<Longrightarrow> Q h'"
+  shows "wp (free_memory h a) Q"
+  using assms wp_free_memory_intro_single
+  by (simp; blast)
+
+lemma wp_free_stack_intro[wp_intro]:
+  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
+  assumes "\<And>s'. free_memory s a = ok s' \<Longrightarrow> Q s'"
+  shows "wp (free_memory s a) Q"
+  using assms wp_free_memory_intro_single
+  by (simp; blast)
+
+
+lemma wp_allocate_memory_intro_single:
   assumes "\<And>s' a. proof_single_memory s' a = Some None \<Longrightarrow> Q (s', a)"
   shows "wp (return (allocate_memory s)) Q"
   using assms
@@ -71,7 +168,22 @@ lemma wp_allocate_memory_intro[wp_intro]:
   unfolding proof_single_memory_def valid_memory_address_def
   by simp
 
+lemma wp_allocate_heap_intro[wp_intro]:
+  assumes "\<And>h' a. proof_memory (r, s, h') (haddr a) = Some None \<Longrightarrow> Q (h', a)"
+  shows "wp (return (allocate_memory h)) Q"
+  using assms wp_allocate_memory_intro_single
+  by auto
+
+lemma wp_allocate_stack_intro[wp_intro]:
+  assumes "\<And>s' a. proof_memory (r, s', h) (saddr a) = Some None \<Longrightarrow> Q (s', a)"
+  shows "wp (return (allocate_memory s)) Q"
+  using assms wp_allocate_memory_intro_single
+  by auto
+
+
+
 subsection "Simps"
+
 lemma memory_set_ok_iff[simp]: "valid_memory_address m a \<longleftrightarrow> (\<exists>m'. set_memory m a v = ok m')"
   unfolding set_memory_def
   by simp
