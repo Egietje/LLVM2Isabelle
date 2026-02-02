@@ -1,4 +1,4 @@
-theory LLVMExamples
+theory ExamplePrograms
   imports "LLVMInstructions"
 begin
 

@@ -1,5 +1,5 @@
 theory LLVMInstructions
-  imports "LLVMState"
+  imports "Definitions" "Registers" "Memory"
 begin
 
 
@@ -196,18 +196,15 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
 
 lemma "get_register r name = err unknown_register \<Longrightarrow> wp (execute_instruction (r,s,m) p (alloca name type align)) Q"
   apply (simp only: execute_instruction.simps(1))
-  apply (rule wp_intro)
-  apply (rule wp_intro(15))
-  apply (intro wp_intro)
-  apply auto
+  apply (intro wp_intro; simp)
   oops
 
-lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> proof_single_memory s a \<noteq> None \<Longrightarrow>
-    wp (execute_instruction s p (store type value pointer align))
-    (\<lambda>x. (abs_value x = abs_value s \<and> proof_single_memory x = (proof_single_memory s)(a \<mapsto> Some v)))"
+lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> proof_memory s a \<noteq> None \<Longrightarrow>
+    wp (execute_instruction s p (store type value (ptr pr) align))
+    (\<lambda>x. (abs_value x = abs_value s \<and> proof_memory x = (proof_memory s)(a \<mapsto> Some v)))"
   apply (simp only: execute_instruction.simps(2))
-  apply (intro wp_intro; simp add: wp_intro)
-  by simp_all
+  apply (intro wp_intro; simp)
+  oops
 
 
 subsection "Blocks and functions"

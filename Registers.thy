@@ -1,27 +1,6 @@
-theory RegisterModel
-  imports "HOL-Library.Mapping" Result
+theory Registers
+  imports Definitions
 begin
-
-section "Definitions"
-
-
-subsection "Types"
-
-type_synonym ('n, 'v) register_model = "('n, 'v) mapping"
-
-
-subsection "Operations"
-
-definition get_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
-
-definition set_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register_model result" where
-  "set_register r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
-
-definition empty_register_model :: "('n, 'v) register_model" where
-  "empty_register_model = Mapping.empty"
-
-
 
 section "Lemmas"
 
@@ -31,8 +10,7 @@ lemma wp_set_register_intro[wp_intro]:
   shows "wp (set_register r n v) Q"
   using assms
   unfolding set_register_def get_register_def
-  apply (cases "Mapping.lookup r n"; simp)
-  by (intro wp_intro; simp)
+  by (cases "Mapping.lookup r n"; simp)
 
 
 lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
@@ -51,9 +29,7 @@ lemma register_set_independent_get: "n \<noteq> n' \<Longrightarrow> set_registe
 
 lemma register_set_independent_get_wlp: "n \<noteq> n' \<Longrightarrow> wlp (set_register r n' v) (\<lambda>r'. get_register r' n = get_register r n)"
   unfolding get_register_def set_register_def
-  apply (cases "Mapping.lookup r n'"; simp)
-  apply (intro wp_intro; simp)
-  by (intro wp_intro; simp)
+  by (cases "Mapping.lookup r n'"; simp)
 
 
 lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_register r' n = ok v"
@@ -63,7 +39,6 @@ lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_regist
 lemma register_set_get_wlp: "wlp (do { r' \<leftarrow> set_register r n v; get_register r n }) ((=) v)"
   unfolding set_register_def get_register_def
   apply (cases "Mapping.lookup r n"; simp)
-  apply (intro wp_intro; simp)
   by (intro wp_intro; simp)
 
 
@@ -73,7 +48,7 @@ lemma register_get_override: "get_register r n = ok v \<Longrightarrow> set_regi
 
 lemma register_get_override_wlp: "wlp (get_register r n) (\<lambda>_. set_register r n v = err register_override)"
   unfolding get_register_def set_register_def
-  by (simp add: option.case_eq_if wp_intro)
+  by (simp add: option.case_eq_if)
 
 
 lemma register_set_override: "set_register r n v = ok r' \<Longrightarrow> set_register r' n v' = err register_override"
@@ -82,8 +57,6 @@ lemma register_set_override: "set_register r n v = ok r' \<Longrightarrow> set_r
 
 lemma register_set_override_wlp: "wlp (set_register r n v) (\<lambda>r'. set_register r' n v' = err register_override)"
   unfolding get_register_def set_register_def
-  apply (cases "Mapping.lookup r n"; simp)
-  apply (intro wp_intro; simp)
-  by (intro wp_intro; simp)
+  by (cases "Mapping.lookup r n"; simp)
 
 end

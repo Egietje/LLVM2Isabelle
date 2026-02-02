@@ -1,61 +1,75 @@
-theory MemoryModel
-  imports Result
+theory Memory
+  imports Definitions
 begin
 
-section "Definitions"
+section "Simps"
 
+lemma proof_single_memory_some_some_iff[simp]:
+  "proof_single_memory s a = Some (Some v) \<longleftrightarrow> valid_memory_address s a \<and> s!a = mem_val v"
+  unfolding get_memory_def proof_single_memory_def valid_memory_address_def
+  by (cases "s!a"; simp)
 
-subsection "Types"
+lemma proof_single_memory_update[simp]:
+  assumes "proof_single_memory s a \<noteq> None"
+  shows "proof_single_memory (s[a := mem_val v]) = (proof_single_memory s)(a := Some (Some v))"
+  using assms
+  unfolding proof_single_memory_def valid_memory_address_def
+  by (auto split: if_splits)
 
-datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
+lemma proof_single_memory_none_iff[simp]:
+  "\<not>valid_memory_address s a \<longleftrightarrow> proof_single_memory s a = None"
+  unfolding proof_single_memory_def valid_memory_address_def
+  by (cases "s!a"; simp)
 
-type_synonym 'a memory_model = "'a memory_value list"
-type_synonym memory_model_address = nat
-
-
-subsection "Operations"
-
-definition allocate_memory :: "'a memory_model \<Rightarrow> ('a memory_model * memory_model_address)" where
-  "allocate_memory m = (m@[mem_unset], length m)"
-
-definition valid_memory_address :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> bool" where
-  "valid_memory_address m a = (a < length m \<and> m!a \<noteq> mem_freed)"
-
-definition get_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a result" where
-  "get_memory m a = do {
-    assert unallocated_address (valid_memory_address m a);
-    (case (m!a) of
-      mem_unset \<Rightarrow> err uninitialized_address
-    | mem_val v \<Rightarrow> ok v
-    | mem_freed \<Rightarrow> err unallocated_address)
-  }"
-
-definition set_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a \<Rightarrow> 'a memory_model result" where
-  "set_memory m a v = do {
-    assert unallocated_address (valid_memory_address m a);
-    return (m[a:=(mem_val v)])
-  }"
-
-definition free_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a memory_model result" where
-  "free_memory m a = do {
-    assert unallocated_address (valid_memory_address m a);
-    return (m[a:=mem_freed])
-  }"
-
-definition empty_memory_model :: "'a memory_model" where
-  "empty_memory_model = []"
+lemma proof_single_memory_not_none_iff[simp]:
+  "valid_memory_address s a \<longleftrightarrow> proof_single_memory s a \<noteq> None"
+  unfolding proof_single_memory_def valid_memory_address_def
+  by (cases "s!a"; simp)
 
 
 
-section "Lemmas"
+section "Intro rules"
 
 lemma wp_case_memory_value_intro[wp_intro]:
-  assumes "(x = mem_unset \<and> wp_gen f Q E) \<or> (\<exists>v. x = mem_val v \<and> wp_gen (g v) Q E) \<or> (x = mem_freed \<and> wp_gen h Q E)"
+  assumes "x = mem_unset \<Longrightarrow> wp_gen f Q E"
+  assumes "\<And>v. x = mem_val v \<Longrightarrow> wp_gen (g v) Q E"
+  assumes "x = mem_freed \<Longrightarrow> wp_gen h Q E"
   shows "wp_gen (case x of mem_unset \<Rightarrow> f | mem_val v \<Rightarrow> g v | mem_freed \<Rightarrow> h) Q E"
   using assms
-  by auto
+  by (cases x; simp)
 
+lemma wp_get_memory_intro[wp_intro]:
+  assumes "proof_single_memory s a = Some (Some x)"
+  assumes "Q x"
+  shows "wp (get_memory s a) Q"
+  using assms
+  unfolding get_memory_def
+  by (intro wp_intro; simp)
 
+lemma wp_set_memory_intro[wp_intro]:
+  assumes "proof_single_memory s a \<noteq> None"
+  assumes "\<And>s'. proof_single_memory s' = (proof_single_memory s)(a := Some (Some v)) \<Longrightarrow> Q s'"
+  shows "wp (set_memory s a v) Q"
+  using assms
+  unfolding set_memory_def
+  by (intro wp_intro; simp)
+
+lemma wp_free_memory_intro[wp_intro]:
+  assumes "proof_single_memory s a \<noteq> None"
+  assumes "\<And>s'. free_memory s a = ok s' \<Longrightarrow> Q s'"
+  shows "wp (free_memory s a) Q"
+  using assms
+  unfolding free_memory_def
+  by (intro wp_intro; simp)
+
+lemma wp_allocate_memory_intro[wp_intro]:
+  assumes "\<And>s' a. proof_single_memory s' a = Some None \<Longrightarrow> Q (s', a)"
+  shows "wp (return (allocate_memory s)) Q"
+  using assms
+  unfolding allocate_memory_def
+  apply (intro wp_intro)
+  unfolding proof_single_memory_def valid_memory_address_def
+  by simp
 
 subsection "Simps"
 lemma memory_set_ok_iff[simp]: "valid_memory_address m a \<longleftrightarrow> (\<exists>m'. set_memory m a v = ok m')"
@@ -65,7 +79,6 @@ lemma memory_set_ok_iff[simp]: "valid_memory_address m a \<longleftrightarrow> (
 lemma memory_get_ok_iff[simp]: "valid_memory_address m a \<and> m!a \<noteq> mem_unset \<longleftrightarrow> (\<exists>v. get_memory m a = ok v)"
   unfolding get_memory_def valid_memory_address_def
   by (cases "m!a"; simp)
-
 
 
 subsection "Empty"
@@ -99,12 +112,12 @@ lemma memory_allocate_independent_get: "allocate_memory m = (m', a') \<Longright
   using nth_append_left
   by (cases "a < a'"; fastforce)
 
-
 lemma memory_allocate_get_uninitialized: "allocate_memory m = (m', i) \<Longrightarrow> get_memory m' i = err uninitialized_address"
   unfolding allocate_memory_def get_memory_def
   apply simp
   unfolding valid_memory_address_def
   by auto
+
 
 subsection "Set"
 
@@ -225,5 +238,6 @@ lemma memory_free_independent_get: "free_memory m a' = ok m' \<Longrightarrow> a
   apply simp
   unfolding valid_memory_address_def
   by auto
+
 
 end
