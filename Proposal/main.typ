@@ -29,6 +29,9 @@
 )
 
 #set page(margin: 1.5cm)
+#set par(
+  justify: true,
+)
 = Topic
 
 LLVM is an intermediate language for compilers that serves as a backend for compilation to many different CPU architectures.
@@ -39,18 +42,37 @@ The aim of my thesis is to import LLVM snippets into Isabelle in order to create
 
 = Related work
 
-== Memory Models
+Much has been written about software verification.
+This section covers the basic principles defined by Hoare and Floyd (@sec-hoare-logic and @sec-floyd-method), extensions opens those bases (@sec-separation-logic and @sec-ver-con-gen), different ways of modeling memory in proofs (@sec-memory-models), and finally different existing program verifiers and their underlying principles (@sec-existing-verifiers).
+
+== Hoare Logic <sec-hoare-logic>
+
+Hoare logic forms the basis of a lot of program verification.
+It defines methods of reasoning about programs through the connections between preconditions $P$, programs $Q$ (now commonly $c$), and results of execution (or postconditions) $R$ (now commonly $Q$).
+This means that as long as the intended execution of the program can be defined in terms of assertions about the values of variables at some point in execution, Hoare logic can be used to prove the partial correctness of such programs.
+However, the logic defined by Hoare cannot be used to proof termination of programs, and as such can only prove partial correctness.@hoare-logic
+As such, extensions and alternate methods have been defined, such as separation logic (see @sec-separation-logic) and verification condition generators (see @sec-ver-con-gen).
+
+
+== Floyd’s Method <sec-floyd-method>
+
+However, Hoare logic is not the only basis to be used for program verification.
+Another method was defined by Floyd independently from Hoare.
+Rather than defining an algebra like Hoare, Floyd's method views programs as flowcharts where each vertex represents a command being executed.
+Verification conditions are defined as $V_c (P; Q)$ which assert that if $P$ holds and command $c$ is executed, then $Q$ will hold afterwards.@floyd-method
+
+
+== Separation Logic <sec-separation-logic>
+== Verification Condition Generators <sec-ver-con-gen>
+
+
+== Memory Models <sec-memory-models>
 Axiomatic specification of memory operations @axiom-spec-memory-model
 
-== Hoare Logic
-== Floyd’s Method
-== Separation Logic
-== Other verification methods
-== Existing imperative program verifiers
+
+== Existing imperative program verifiers <sec-existing-verifiers>
 
 Framework for VCGs using theorem provers @vcg-via-tp
-
-=== Peter’s work
 
 Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
 
@@ -71,7 +93,7 @@ It has a prototype implementation to support verification of LLVM-IR programs ca
 
 Another separation-logic based verifier is VeriFast, aimed at verifying single- and multi-threaded C and Java programs.@dedver-verifast
 
-Dafny@dedver-dafny-1 @dedver-dafny-2
+Dafny has a similar approach with a key difference: instead of compiling programs to Dafny from their source language, programmers instead create programs in the Dafny language, verify them there, and then compile them from Dafny to their preferred language.@dedver-dafny
 
 RESOLVE@dedver-resolve
 
@@ -103,12 +125,12 @@ The operational semantics are defined as follows:
 - Execution state is defined as a triple of registers, a stack, and a heap.
 
 The regular instructions currently (partly) implemented are:
-- phi
 - alloca
 - store
 - load
 - icmp
 - add
+- phi
 
 The terminator instructions implemented are:
 - br
