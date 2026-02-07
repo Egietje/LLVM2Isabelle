@@ -273,95 +273,95 @@ lemma wp_set_memory_independent_validity:
   by (intro wp_intro; simp add: fun_eq_iff)
 
 lemma memory_set_override:
-  assumes "set_memory m i v = ok m'"
-  assumes "set_memory m' i v' = ok m''"
-  shows "get_memory m'' i = ok v'"
+  assumes "set_single_memory m i v = ok m'"
+  assumes "set_single_memory m' i v' = ok m''"
+  shows "get_single_memory m'' i = ok v'"
   using assms
-  unfolding set_memory_def get_memory_def valid_memory_address_def
+  unfolding set_single_memory_def get_single_memory_def valid_single_memory_address_def
   by auto
 
 lemma memory_set_override_wlp:
   "wlp (do {
-    m' \<leftarrow> set_memory m a v1;
-    m'' \<leftarrow> set_memory m' a v2;
-    get_memory m'' a}) (\<lambda>v. v = v2)"
-  unfolding set_memory_def get_memory_def valid_memory_address_def
+    m' \<leftarrow> set_single_memory m a v1;
+    m'' \<leftarrow> set_single_memory m' a v2;
+    get_single_memory m'' a}) (\<lambda>v. v = v2)"
+  unfolding set_single_memory_def get_single_memory_def valid_single_memory_address_def
   by (intro wp_intro; simp)
 
 
-lemma memory_set_identity: "get_memory m i = ok v \<Longrightarrow> set_memory m i v = ok m' \<Longrightarrow> m = m'"
-  unfolding get_memory_def set_memory_def
+lemma memory_set_identity: "get_single_memory m i = ok v \<Longrightarrow> set_single_memory m i v = ok m' \<Longrightarrow> m = m'"
+  unfolding get_single_memory_def set_single_memory_def
   apply simp
-  unfolding valid_memory_address_def
+  unfolding valid_single_memory_address_def
   apply (cases "m!i"; simp)
   using list_update_id
   by metis
 
-lemma memory_set_identity_wlp: "wlp (do { v \<leftarrow> get_memory m a; set_memory m a v }) ((=) m)"
-  unfolding get_memory_def set_memory_def valid_memory_address_def
+lemma memory_set_identity_wlp: "wlp (do { v \<leftarrow> get_single_memory m a; set_single_memory m a v }) ((=) m)"
+  unfolding get_single_memory_def set_single_memory_def valid_single_memory_address_def
   apply (intro wp_intro; simp)
   apply (cases "m!a"; simp)
   using list_update_id
   by metis
 
 
-lemma memory_set_get: "set_memory m i v = ok m' \<Longrightarrow> get_memory m' i = ok v"
-  unfolding set_memory_def get_memory_def valid_memory_address_def
+lemma memory_set_get: "set_single_memory m i v = ok m' \<Longrightarrow> get_single_memory m' i = ok v"
+  unfolding get_single_memory_def set_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_set_get_wlp: "wlp (do {m' \<leftarrow> set_memory m a v; get_memory m' a}) ((=) v)"
-  unfolding set_memory_def get_memory_def valid_memory_address_def
+lemma memory_set_get_wlp: "wlp (do {m' \<leftarrow> set_single_memory m a v; get_single_memory m' a}) ((=) v)"
+  unfolding get_single_memory_def set_single_memory_def valid_single_memory_address_def
   by (intro wp_intro; simp)
 
 
-lemma memory_set_independent_get: "set_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_memory m a = get_memory m' a"
-  unfolding set_memory_def get_memory_def
+lemma memory_set_independent_get: "set_single_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_single_memory m a = get_single_memory m' a"
+  unfolding get_single_memory_def set_single_memory_def
   apply simp
-  unfolding valid_memory_address_def
+  unfolding valid_single_memory_address_def
   by auto
 
-lemma memory_set_independent_get_wlp: "a \<noteq> a' \<Longrightarrow> wlp (set_memory m a' v) (\<lambda>m'. get_memory m' a = get_memory m a)"
-  unfolding set_memory_def get_memory_def
+lemma memory_set_independent_get_wlp: "a \<noteq> a' \<Longrightarrow> wlp (set_single_memory m a' v) (\<lambda>m'. get_single_memory m' a = get_single_memory m a)"
+  unfolding get_single_memory_def set_single_memory_def
   apply (intro wp_intro)
   apply simp
-  unfolding valid_memory_address_def
+  unfolding valid_single_memory_address_def
   by auto
 
 
-lemma memory_set_independent_valid: "set_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_memory_address m a = valid_memory_address m' a"
-  unfolding set_memory_def get_memory_def
+lemma memory_set_independent_valid: "set_single_memory m a' v = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_single_memory_address m a = valid_single_memory_address m' a"
+  unfolding get_single_memory_def set_single_memory_def
   apply simp
-  unfolding valid_memory_address_def
+  unfolding valid_single_memory_address_def
   by auto
 
 
 subsection "Get"
 
-lemma memory_get_ok_valid: "get_memory m a = ok v \<Longrightarrow> valid_memory_address m a"
-  unfolding get_memory_def
+lemma memory_get_ok_valid: "get_single_memory m a = ok v \<Longrightarrow> valid_single_memory_address m a"
+  unfolding get_single_memory_def
   by simp
 
 
 subsection "Free"
 
-lemma memory_free_get: "free_memory m a = ok m' \<Longrightarrow> get_memory m' a = err unallocated_address"
-  unfolding free_memory_def get_memory_def valid_memory_address_def
+lemma memory_free_get: "free_single_memory m a = ok m' \<Longrightarrow> get_single_memory m' a = err unallocated_address"
+  unfolding free_single_memory_def get_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_free_set: "free_memory m a = ok m' \<Longrightarrow> set_memory m' a v = err unallocated_address"
-  unfolding free_memory_def set_memory_def valid_memory_address_def
+lemma memory_free_set: "free_single_memory m a = ok m' \<Longrightarrow> set_single_memory m' a v = err unallocated_address"
+  unfolding free_single_memory_def set_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_free_invalid: "free_memory m a = ok m' \<Longrightarrow> \<not>valid_memory_address m' a \<and> valid_memory_address m a"
-  unfolding free_memory_def valid_memory_address_def
+lemma memory_free_invalid: "free_single_memory m a = ok m' \<Longrightarrow> \<not>valid_single_memory_address m' a \<and> valid_single_memory_address m a"
+  unfolding free_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_free_independent_valid: "free_memory m a' = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_memory_address m a \<longleftrightarrow> valid_memory_address m' a"
-  unfolding free_memory_def valid_memory_address_def
+lemma memory_free_independent_valid: "free_single_memory m a' = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_single_memory_address m a \<longleftrightarrow> valid_single_memory_address m' a"
+  unfolding free_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_free_independent_get: "free_memory m a' = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_memory m a = ok v \<longleftrightarrow> get_memory m' a = ok v"
-  unfolding free_memory_def get_memory_def valid_memory_address_def
+lemma memory_free_independent_get: "free_single_memory m a' = ok m' \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_single_memory m a = ok v \<longleftrightarrow> get_single_memory m' a = ok v"
+  unfolding free_single_memory_def get_single_memory_def valid_single_memory_address_def
   by auto
 
 
