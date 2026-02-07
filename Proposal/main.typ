@@ -123,6 +123,8 @@ The operational semantics are defined as follows:
 - Instruction blocks have a list of regular instructions to be executed in order and up to one terminator instruction that impacts execution flow.
 - Instructions are executed according to their specification in the LLVM Language Reference Manual.#footnote("https://llvm.org/docs/LangRef.html")
 - Execution state is defined as a triple of registers, a stack, and a heap.
+- The stack and heap use the same underlying memory definition which uses a list of values.
+- The registers use a mapping from a name to a value.
 
 The regular instructions currently (partly) implemented are:
 - alloca
@@ -142,6 +144,16 @@ The terminator instructions implemented are:
 
 
 = Rough planning
+
+- Create abstract register
+- Implement intro rules for registers
+- Implement intro rules at the level of instructions
+- Support verification condition generation at the level of blocks
+- Add method of specifying pre- and post-conditions for code blocks 
+- Create flowchart view of code blocks
+- Match up post-condition of one block with pre-condition of subsequent block for correctness proofs
+- Support more LLVM instructions
+- Import/export from/to direct LLVM code
 
 #pagebreak()
 

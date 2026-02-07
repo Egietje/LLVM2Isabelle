@@ -1,5 +1,5 @@
 theory ExamplePrograms
-  imports "LLVMInstructions"
+  imports "LLVMInstructions" "HOL-Library.AList_Mapping"
 begin
 
 section "Simple Branching"
@@ -81,6 +81,7 @@ define dso_local i32 @main() #0 {
 }
 *)
 
+code_deps execute_function
 value "execute_function empty_state simple_branching_main"
 
 section "Phi Node"

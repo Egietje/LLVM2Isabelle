@@ -1,78 +1,125 @@
-theory Memory
+theory Memory    
   imports Definitions
 begin
 
 section "Simps"
 
-named_theorems proof_single_memory_simps
+named_theorems single_memory_simps
+named_theorems single_memory_intro
 
-lemma proof_single_memory_some_some_iff[proof_single_memory_simps]:
-  "proof_single_memory s a = Some (Some v) \<longleftrightarrow> valid_memory_address s a \<and> s!a = mem_val v"
-  unfolding get_memory_def proof_single_memory_def valid_memory_address_def
-  by (cases "s!a"; simp)
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (r,s,h) = register_\<alpha> (r,s',h')"
+  apply (rule ext)
+  subgoal for x
+    by (cases x; simp)
+  done
 
-lemma proof_memory_some_some_iff_heap[simp]:
-  "proof_memory (r,s,h) (haddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address h a \<and> h!a = mem_val v"
-  using proof_single_memory_some_some_iff
-  by simp
-
-lemma proof_single_memory_some_some_iff_stack[simp]:
-  "proof_memory (r,s,h) (saddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address s a \<and> s!a = mem_val v"
-  using proof_single_memory_some_some_iff
-  by simp
+lemma unfold_memory_\<alpha>:
+  "memory_\<alpha> (r,s,h) = (\<lambda>saddr a \<Rightarrow> single_memory_\<alpha> s a | haddr a \<Rightarrow> single_memory_\<alpha> h a)"
+  by (simp add: fun_eq_iff split: llvm_address.splits)
 
 
-lemma proof_single_memory_update[proof_single_memory_simps]:
-  assumes "proof_single_memory s a \<noteq> None"
-  shows "proof_single_memory (s[a := mem_val v]) = (proof_single_memory s)(a := Some (Some v))"
+lemma single_memory_\<alpha>_set[single_memory_simps]:
+  assumes "single_memory_\<alpha> s a \<noteq> None"
+  shows "single_memory_\<alpha> (s[a := mem_val v]) = (single_memory_\<alpha> s)(a := Some (Some v))"
   using assms
-  unfolding proof_single_memory_def valid_memory_address_def
+  unfolding single_memory_\<alpha>_def valid_single_memory_address_def
   by (auto split: if_splits)
 
-lemma proof_memory_update_heap[simp]:
-  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
-  shows "\<And>a'. proof_memory (r,s,h[a := mem_val v]) a' = ((proof_memory (r,s,h))((haddr a) := Some (Some v))) a'"
+lemma memory_\<alpha>_set_heap[simp]:
+  assumes "memory_\<alpha> (r,s,h) (haddr a) \<noteq> None"
+  shows "memory_\<alpha> (r,s,h[a := mem_val v]) = ((memory_\<alpha> (r,s,h))((haddr a) := Some (Some v)))"
+  apply (rule ext)
   subgoal for a'
-  using assms proof_single_memory_update
+  using assms single_memory_simps
   by (cases a'; fastforce)
   done
 
-lemma proof_memory_update_stack[simp]:
-  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
-  shows "\<And>a'. proof_memory (r,s[a := mem_val v],h) a' = ((proof_memory (r,s,h))((saddr a) := Some (Some v))) a'"
+lemma memory_\<alpha>_set_stack[simp]:
+  assumes "memory_\<alpha> (r,s,h) (saddr a) \<noteq> None"
+  shows "memory_\<alpha> (r,s[a := mem_val v],h) = ((memory_\<alpha> (r,s,h))((saddr a) := Some (Some v)))"
+  apply (rule ext)
   subgoal for a'
-  using assms proof_single_memory_update
+  using assms single_memory_simps
   by (cases a'; fastforce)
   done
 
+lemma single_memory_\<alpha>_allocate[single_memory_simps]:
+  assumes "a \<noteq> length m"
+  shows "single_memory_\<alpha> (m@[mem_unset]) a = (single_memory_\<alpha> m) a"
+  unfolding single_memory_\<alpha>_def valid_single_memory_address_def
+  using assms
+  by (auto simp: nth_append)
 
-lemma proof_single_memory_none_iff[proof_single_memory_simps]:
-  "\<not>valid_memory_address s a \<longleftrightarrow> proof_single_memory s a = None"
-  unfolding proof_single_memory_def valid_memory_address_def
+lemma single_memory_\<alpha>_allocated[single_memory_simps]:
+  "single_memory_\<alpha> (m@[mem_unset]) (length m) = Some None"
+  unfolding single_memory_\<alpha>_def valid_single_memory_address_def
+  by simp
+
+lemma memory_\<alpha>_allocate_heap_eq:
+  assumes "a \<noteq> (haddr (length h))"
+  shows "memory_\<alpha> (r,s,h@[mem_unset]) a = memory_\<alpha> (r,s,h) a"
+  using assms
+  by (cases a; simp add: single_memory_simps)
+
+lemma memory_\<alpha>_allocate_stack_eq:
+  assumes "a \<noteq> (saddr (length s))"
+  shows "memory_\<alpha> (r,s@[mem_unset],h) a = memory_\<alpha> (r,s,h) a"
+  using assms
+  by (cases a; simp add: single_memory_simps)
+
+lemma memory_\<alpha>_allocate_heap[simp]:
+  "memory_\<alpha> (r, s, h @ [mem_unset]) = (memory_\<alpha> (r, s, h))(haddr (length h) := Some None)"
+  by (auto simp: memory_\<alpha>_allocate_heap_eq single_memory_simps)
+
+lemma memory_\<alpha>_allocate_stack[simp]:
+  "memory_\<alpha> (r, s @ [mem_unset], h) = (memory_\<alpha> (r, s, h))(saddr (length s) := Some None)"
+  by (auto simp: memory_\<alpha>_allocate_stack_eq single_memory_simps)
+
+
+lemma single_memory_\<alpha>_free[single_memory_simps]:
+  "single_memory_\<alpha> (s[a := mem_freed]) = (single_memory_\<alpha> s)(a := None)"
+  unfolding single_memory_\<alpha>_def valid_single_memory_address_def
+  by (auto split: if_splits)
+
+lemma memory_\<alpha>_free_heap[simp]:
+  "memory_\<alpha> (r,s,h[a := mem_freed]) = (memory_\<alpha> (r,s,h))(haddr a := None)"
+  apply (rule ext)
+  subgoal for a'
+    by (cases a'; simp add: single_memory_simps)
+  done
+
+lemma memory_\<alpha>_free_stack[simp]:
+  "memory_\<alpha> (r,s[a := mem_freed],h) = (memory_\<alpha> (r,s,h))(saddr a := None)"
+  apply (rule ext)
+  subgoal for a'
+    by (cases a'; simp add: single_memory_simps)
+  done
+
+
+lemma single_memory_\<alpha>_not_none_iff[single_memory_simps]:
+  "valid_single_memory_address s a \<longleftrightarrow> single_memory_\<alpha> s a \<noteq> None"
+  unfolding single_memory_\<alpha>_def valid_single_memory_address_def
   by (cases "s!a"; simp)
 
-lemma proof_memory_none_iff_heap[simp]:
-  "\<not>valid_memory_address h a \<longleftrightarrow> proof_memory (r,s,h) (haddr a) = None"
-  using proof_single_memory_none_iff by simp
-
-lemma proof_memory_none_iff_stack[simp]:
-  "\<not>valid_memory_address s a \<longleftrightarrow> proof_memory (r,s,h) (saddr a) = None"
-  using proof_single_memory_none_iff by simp
+lemma memory_\<alpha>_not_none_iff[simp]:
+  "valid_memory_address s a \<longleftrightarrow> memory_\<alpha> s a \<noteq> None"
+  by (cases s; cases a; simp add: single_memory_simps)
 
 
-lemma proof_single_memory_not_none_iff[proof_single_memory_simps]:
-  "valid_memory_address s a \<longleftrightarrow> proof_single_memory s a \<noteq> None"
-  unfolding proof_single_memory_def valid_memory_address_def
+lemma single_memory_\<alpha>_some_some_iff[single_memory_simps]:
+  "single_memory_\<alpha> s a = Some (Some v) \<longleftrightarrow> valid_single_memory_address s a \<and> s!a = mem_val v"
+  unfolding get_single_memory_def single_memory_\<alpha>_def valid_single_memory_address_def
   by (cases "s!a"; simp)
 
-lemma proof_memory_not_none_iff_heap[simp]:
-  "valid_memory_address h a \<longleftrightarrow> proof_memory (r,s,h) (haddr a) \<noteq> None"
-  using proof_single_memory_not_none_iff by simp
+lemma memory_\<alpha>_some_some_iff_heap[simp]:
+  "memory_\<alpha> (r,s,h) (haddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address (r,s,h) (haddr a) \<and> h!a = mem_val v"
+  using single_memory_simps
+  by fastforce
 
-lemma proof_memory_not_none_iff_stack[simp]:
-  "valid_memory_address s a \<longleftrightarrow> proof_memory (r,s,h) (saddr a) \<noteq> None"
-  using proof_single_memory_not_none_iff by simp
-
+lemma single_memory_\<alpha>_some_some_iff_stack[simp]:
+  "memory_\<alpha> (r,s,h) (saddr a) = Some (Some v) \<longleftrightarrow> valid_memory_address (r,s,h) (saddr a) \<and> s!a = mem_val v"
+  using single_memory_simps
+  by fastforce
 
 
 section "Intro rules"
@@ -86,167 +133,150 @@ lemma wp_case_memory_value_intro[wp_intro]:
   by (cases x; simp)
 
 
-lemma wp_get_memory_intro_single:
-  assumes "proof_single_memory s a = Some (Some x)"
-  assumes "Q x"
-  shows "wp (get_memory s a) Q"
+lemma wp_get_single_memory[THEN consequence, single_memory_intro]:
+  assumes "single_memory_\<alpha> s a \<noteq> None"
+  assumes "single_memory_\<alpha> s a \<noteq> Some None"
+  shows "wp (get_single_memory s a) (\<lambda>x. single_memory_\<alpha> s a = Some (Some x))"
   using assms
-  unfolding get_memory_def
-  by (intro wp_intro; simp add: proof_single_memory_simps)
+  unfolding get_single_memory_def valid_single_memory_address_def single_memory_\<alpha>_def
+  by (intro wp_intro; simp)
 
-lemma wp_get_heap_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (haddr a) = Some (Some x)"
-  assumes "Q x"
-  shows "wp (get_memory h a) Q"
-  using assms wp_get_memory_intro_single
-  by simp
-
-lemma wp_get_stack_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (saddr a) = Some (Some x)"
-  assumes "Q x"
-  shows "wp (get_memory s a) Q"
-  using assms wp_get_memory_intro_single
-  by simp
-
-
-lemma wp_set_memory_intro_single:
-  assumes "proof_single_memory s a \<noteq> None"
-  assumes "\<And>s'. proof_single_memory s' = (proof_single_memory s)(a := Some (Some v)) \<Longrightarrow> Q s'"
-  shows "wp (set_memory s a v) Q"
+lemma wp_get_memory_intro[THEN consequence, wp_intro]:
+  assumes "memory_\<alpha> s a \<noteq> None"
+  assumes "memory_\<alpha> s a \<noteq> Some None"
+  shows "wp (get_memory s a) (\<lambda>x. memory_\<alpha> s a = Some (Some x))"
   using assms
-  unfolding set_memory_def
-  by (intro wp_intro; simp add: proof_single_memory_simps)
+  by (cases a; cases s; simp; intro single_memory_intro; simp)
 
-lemma wp_set_heap_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
-  assumes "\<And>h'. proof_memory (r,s,h') = (proof_memory (r,s,h))((haddr a) := Some (Some v)) \<Longrightarrow> Q h'"
-  shows "wp (set_memory h a v) Q"
+
+lemma wp_set_single_memory[THEN consequence, single_memory_intro]:
+  assumes "single_memory_\<alpha> m a \<noteq> None"
+  shows "wp (set_single_memory m a v) (\<lambda>m'. single_memory_\<alpha> m' = (single_memory_\<alpha> m)(a := Some (Some v)))"
   using assms
-  unfolding set_memory_def
-  apply (intro wp_intro; simp add: proof_single_memory_simps)
-  using proof_memory_update_heap by fastforce
+  unfolding set_single_memory_def
+  by (intro wp_intro; simp add: single_memory_simps)
+                                                                               
+lemma wp_set_memory_intro[THEN consequence, wp_intro]:
+  assumes "memory_\<alpha> s a \<noteq> None"
+  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
+  using assms 
+  apply (cases a; cases s; simp)
+  unfolding set_single_memory_def
+  by (intro wp_intro; simp add: single_memory_simps)+
 
-lemma wp_set_stack_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
-  assumes "\<And>s'. proof_memory (r,s',h) = (proof_memory (r,s,h))((saddr a) := Some (Some v)) \<Longrightarrow> Q s'"
-  shows "wp (set_memory s a v) Q"
+
+lemma wp_free_single_memory[THEN consequence, single_memory_intro]:
+  assumes "single_memory_\<alpha> s a \<noteq> None"
+  shows "wp (free_single_memory s a) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := None))"
   using assms
-  unfolding set_memory_def
-  apply (intro wp_intro; simp add: proof_single_memory_simps)
-  using proof_memory_update_stack by fastforce
-
-
-lemma wp_free_memory_intro_single:
-  assumes "proof_single_memory s a \<noteq> None"
-  assumes "\<And>s'. free_memory s a = ok s' \<Longrightarrow> Q s'"
-  shows "wp (free_memory s a) Q"
-  using assms
-  unfolding free_memory_def
-  by (intro wp_intro; simp add: proof_single_memory_simps)
-
-lemma wp_free_heap_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (haddr a) \<noteq> None"
-  assumes "\<And>h'. free_memory h a = ok h' \<Longrightarrow> Q h'"
-  shows "wp (free_memory h a) Q"
-  using assms wp_free_memory_intro_single
-  by (simp; blast)
-
-lemma wp_free_stack_intro[wp_intro]:
-  assumes "proof_memory (r,s,h) (saddr a) \<noteq> None"
-  assumes "\<And>s'. free_memory s a = ok s' \<Longrightarrow> Q s'"
-  shows "wp (free_memory s a) Q"
-  using assms wp_free_memory_intro_single
-  by (simp; blast)
-
-
-lemma wp_allocate_memory_intro_single:
-  assumes "\<And>s' a. proof_single_memory s' a = Some None \<Longrightarrow> Q (s', a)"
-  shows "wp (return (allocate_memory s)) Q"
-  using assms
-  unfolding allocate_memory_def
+  unfolding free_single_memory_def
   apply (intro wp_intro)
-  unfolding proof_single_memory_def valid_memory_address_def
-  by simp
+  apply (simp add: single_memory_simps)
+  by (simp add: single_memory_simps)
 
-lemma wp_allocate_heap_intro[wp_intro]:
-  assumes "\<And>h' a. proof_memory (r, s, h') (haddr a) = Some None \<Longrightarrow> Q (h', a)"
-  shows "wp (return (allocate_memory h)) Q"
-  using assms wp_allocate_memory_intro_single
-  by auto
+lemma wp_free_memory_intro[THEN consequence, wp_intro]:
+  assumes "memory_\<alpha> s a \<noteq> None"
+  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  using assms
+  apply (cases a; cases s; simp)
+  apply (intro wp_intro single_memory_intro; simp; rule ext)
+  subgoal for _ _ _ _ _ a' by (cases a'; simp)
+  apply (intro wp_intro single_memory_intro; simp; rule ext)
+  subgoal for _ _ _ _ _ a' by (cases a'; simp)
+  done
 
-lemma wp_allocate_stack_intro[wp_intro]:
-  assumes "\<And>s' a. proof_memory (r, s', h) (saddr a) = Some None \<Longrightarrow> Q (s', a)"
-  shows "wp (return (allocate_memory s)) Q"
-  using assms wp_allocate_memory_intro_single
-  by auto
 
+lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
+  "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None))"
+  unfolding allocate_single_memory_def
+  by (intro wp_intro; auto simp: single_memory_simps)
 
+lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
+  "wp (return (allocate_heap s)) (\<lambda>(s', a). (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  unfolding allocate_heap_def allocate_single_memory_def
+  by (cases s; intro wp_intro; auto)
+
+lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  unfolding allocate_stack_def allocate_single_memory_def
+  by (cases s; intro wp_intro; auto)
 
 subsection "Simps"
 
-lemma memory_set_ok_iff[simp]: "valid_memory_address m a \<longleftrightarrow> (\<exists>m'. set_memory m a v = ok m')"
-  unfolding set_memory_def
+lemma memory_set_ok_iff[simp]: "valid_single_memory_address m a \<longleftrightarrow> (\<exists>m'. set_single_memory m a v = ok m')"
+  unfolding set_single_memory_def
   by simp
 
-lemma memory_get_ok_iff[simp]: "valid_memory_address m a \<and> m!a \<noteq> mem_unset \<longleftrightarrow> (\<exists>v. get_memory m a = ok v)"
-  unfolding get_memory_def valid_memory_address_def
+lemma memory_get_ok_iff[simp]: "valid_single_memory_address m a \<and> m!a \<noteq> mem_unset \<longleftrightarrow> (\<exists>v. get_single_memory m a = ok v)"
+  unfolding get_single_memory_def valid_single_memory_address_def
   by (cases "m!a"; simp)
 
 
 subsection "Empty"
 
-lemma memory_empty_get: "get_memory empty_memory_model a = err unallocated_address"
-  unfolding empty_memory_model_def get_memory_def valid_memory_address_def
+lemma memory_empty_get: "get_single_memory empty_memory_model a = err unallocated_address"
+  unfolding empty_memory_model_def get_single_memory_def valid_single_memory_address_def
   by simp
 
-lemma memory_empty_invalid: "\<not>valid_memory_address empty_memory_model a"
-  unfolding empty_memory_model_def valid_memory_address_def
+lemma memory_empty_invalid: "\<not>valid_single_memory_address empty_memory_model a"
+  unfolding empty_memory_model_def valid_single_memory_address_def
   by simp
 
-lemma memory_empty_set: "set_memory empty_memory_model a v = err unallocated_address"
-  unfolding empty_memory_model_def set_memory_def valid_memory_address_def
+lemma memory_empty_set: "set_single_memory empty_memory_model a v = err unallocated_address"
+  unfolding empty_memory_model_def set_single_memory_def valid_single_memory_address_def
   by simp
 
 
 subsection "Allocate"
 
-lemma memory_allocate_validity: "allocate_memory m = (m', i) \<Longrightarrow> \<not>valid_memory_address m i \<and> valid_memory_address m' i"
-  unfolding allocate_memory_def valid_memory_address_def
+lemma memory_allocate_validity: "allocate_single_memory m = (m', i) \<Longrightarrow> \<not>valid_single_memory_address m i \<and> valid_single_memory_address m' i"
+  unfolding allocate_single_memory_def valid_single_memory_address_def
   by auto
 
-lemma memory_allocate_independent_valid[simp]: "allocate_memory m = (m', a') \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_memory_address m a \<longleftrightarrow> valid_memory_address m' a"
-  unfolding valid_memory_address_def allocate_memory_def
+lemma memory_allocate_independent_valid[simp]: "allocate_single_memory m = (m', a') \<Longrightarrow> a \<noteq> a' \<Longrightarrow> valid_single_memory_address m a \<longleftrightarrow> valid_single_memory_address m' a"
+  unfolding valid_single_memory_address_def allocate_single_memory_def
   using nth_append_left
   by fastforce
 
-lemma memory_allocate_independent_get: "allocate_memory m = (m', a') \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_memory m a = get_memory m' a" 
-  unfolding valid_memory_address_def allocate_memory_def get_memory_def
+lemma memory_allocate_independent_get: "allocate_single_memory m = (m', a') \<Longrightarrow> a \<noteq> a' \<Longrightarrow> get_single_memory m a = get_single_memory m' a" 
+  unfolding valid_single_memory_address_def allocate_single_memory_def get_single_memory_def
   using nth_append_left
   by (cases "a < a'"; fastforce)
 
-lemma memory_allocate_get_uninitialized: "allocate_memory m = (m', a) \<Longrightarrow> get_memory m' a = err uninitialized_address"
-  unfolding get_memory_def valid_memory_address_def allocate_memory_def
+lemma memory_allocate_get_uninitialized: "allocate_single_memory m = (m', a) \<Longrightarrow> get_single_memory m' a = err uninitialized_address"
+  unfolding get_single_memory_def valid_single_memory_address_def allocate_single_memory_def
   by auto
 
 
 subsection "Set"
 
-lemma memory_set_invalid: "\<not>valid_memory_address m a \<Longrightarrow> set_memory m a v = err unallocated_address"
-  unfolding set_memory_def
+lemma memory_set_invalid: "\<not>valid_single_memory_address m a \<Longrightarrow> set_single_memory m a v = err unallocated_address"
+  unfolding set_single_memory_def
   by simp
 
-lemma memory_set_ok_valid: "set_memory m a v = ok m' \<Longrightarrow> valid_memory_address m' a \<and> valid_memory_address m a"
-  unfolding set_memory_def
+lemma memory_set_ok_valid: "set_single_memory m a v = ok m' \<Longrightarrow> valid_single_memory_address m' a \<and> valid_single_memory_address m a"
+  unfolding set_single_memory_def
   apply simp
-  unfolding valid_memory_address_def
+  unfolding valid_single_memory_address_def
   by auto
 
-lemma memory_set_ok_valid_wlp: "wlp (set_memory m a v) (\<lambda> m'. valid_memory_address m' a \<and> valid_memory_address m a)"
-  unfolding set_memory_def valid_memory_address_def
-  by (intro wp_intro; simp)
+lemma wp_set_single_memory_independent_validity[THEN consequence, single_memory_intro]:
+  assumes "valid_single_memory_address m a"
+  shows "wp (set_single_memory m a v) (\<lambda> m'. valid_single_memory_address m' = valid_single_memory_address m)"
+  using assms
+  by (intro single_memory_intro; simp add: fun_eq_iff single_memory_simps)
 
+lemma wp_set_memory_independent_validity:
+  assumes "valid_memory_address s a"
+  shows "wp (set_memory s a v) (\<lambda> s'. valid_memory_address s' = valid_memory_address s)"
+  using assms
+  by (intro wp_intro; simp add: fun_eq_iff)
 
-lemma memory_set_override: "set_memory m i v = ok m' \<Longrightarrow> set_memory m' i v' = ok m'' \<Longrightarrow> get_memory m'' i = ok v'"
+lemma memory_set_override:
+  assumes "set_memory m i v = ok m'"
+  assumes "set_memory m' i v' = ok m''"
+  shows "get_memory m'' i = ok v'"
+  using assms
   unfolding set_memory_def get_memory_def valid_memory_address_def
   by auto
 
