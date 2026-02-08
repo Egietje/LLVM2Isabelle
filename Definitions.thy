@@ -7,7 +7,7 @@ section "LLVM AST"
 
 subsection "Types and values"
 
-datatype llvm_type = i1 | i32 | i64 | addr
+datatype llvm_type = i1 | i32 | i64 | addr_type
 
 type_synonym memory_model_address = nat
 datatype llvm_address = saddr memory_model_address | haddr memory_model_address
@@ -95,15 +95,22 @@ definition empty_state :: "state" where
 
 subsection "Register operations"
 
-definition get_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_register r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
+definition get_register_op :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v result" where
+  "get_register_op r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
 
-definition set_register :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register_model result" where
-  "set_register r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
+fun get_register :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
+  "get_register (r,s,h) v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register_op r re)"
 
-definition get_value_from_ref  :: "llvm_register_model \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
-  "get_value_from_ref r v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register r re)"
 
+definition set_register_op :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register_model result" where
+  "set_register_op r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
+
+definition set_register :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
+  "set_register s n v = do {
+    (r,s,h) \<leftarrow> return s;
+    r' \<leftarrow> set_register_op r n v;
+    return (r',s,h)
+  }"
 
 subsection "Memory operations"
 

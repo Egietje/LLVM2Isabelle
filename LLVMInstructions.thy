@@ -9,48 +9,25 @@ section "Execution"
 
 subsection "Memory instruction helpers"
 
-fun store_to_stack_or_heap :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value \<Rightarrow> state result" where
-  "store_to_stack_or_heap (r, s, h) (saddr a) v = do {
-    s' \<leftarrow> set_memory s a v;
-    return (r, s', h)
-  }"
-| "store_to_stack_or_heap (r, s, h) (haddr a) v = do {
-    h' \<leftarrow> set_memory h a v;
-    return (r, s, h')
+fun get_address_from_pointer :: "state \<Rightarrow> llvm_pointer \<Rightarrow> llvm_address result" where
+  "get_address_from_pointer s (ptr p) = do {
+    a \<leftarrow> get_register s p;
+    (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address)
   }"
 
-fun store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
-  "store_value (r, s, m) v (ptr p) = do {
-    a \<leftarrow> get_value r p;
-    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address);
-    val \<leftarrow> get_value r v;
-    store_to_stack_or_heap (r, s, m) ad val
+definition store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
+  "store_value s v p = do {
+    address \<leftarrow> get_address_from_pointer s p;
+    value \<leftarrow> get_register s v;
+    set_memory s address value
   }"
 
-lemma store_value_ok_if[wp_intro]:
-  assumes "(\<exists>a ad val s' p. pointer = ptr p \<and> get_value r p = ok a \<and> a = addr ad \<and> get_value r v = ok val \<and> store_to_stack_or_heap (r, s, m) ad val = ok s')"
-  shows "(\<exists>s'. store_value (r, s, m) v pointer = ok s')"
-  using assms by auto
 
-lemma store_value_intro:
-  assumes "\<exists>s'. store_value s v p = ok s'"
-  assumes "\<And>s'. store_value s v p = ok s' \<Longrightarrow> Q s'"
-  shows "wp (store_value s v p) Q"
-  using assms 
-  by (auto; intro wp_intro; simp)
-
-
-fun load_from_stack_or_heap :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
-  "load_from_stack_or_heap (r, s, h) (saddr a) = get_memory s a"
-| "load_from_stack_or_heap (r, s, h) (haddr a) = get_memory h a"
-
-fun load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
-  "load_value (r, s, h) n (ptr p) = do {
-    a \<leftarrow> get_value r p;
-    ad \<leftarrow> (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address);
-    v \<leftarrow> load_from_stack_or_heap (r, s, h) ad;
-    r' \<leftarrow> set_register r n v;
-    return (r', s, h)
+definition load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
+  "load_value s n p = do {
+    a \<leftarrow> get_address_from_pointer s p;
+    v \<leftarrow> get_memory s a;
+    set_register s n v
   }"
 
 
@@ -154,57 +131,91 @@ subsection "Instruction"
 
 fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
   (* Allocate new memory value on the stack, and set the specified register to its address. *)
-  "execute_instruction (r, s, h) _ (alloca name type align) =
+  "execute_instruction s _ (alloca name type align) =
     (do {
-      (s', a) \<leftarrow> return (allocate_memory s);
-      r' \<leftarrow> set_register r name (addr (saddr a));
-      return (r', s', h)
+      (s', a) \<leftarrow> return (allocate_stack s);
+      set_register s' name (addr a)
     })"
   (* Read address from pointer and store value in the stack or the heap. *)
-| "execute_instruction s _ (store type value pointer align) = do {
-    s' \<leftarrow> store_value s value pointer;
-    return s'
-  }"
+| "execute_instruction s _ (store type value pointer align) = store_value s value pointer"
   (* Read address from pointer and load value from either the stack or the heap. *)
-| "execute_instruction s _ (load register type pointer align) = do {
-    s' \<leftarrow> load_value s register pointer;
-    return s'
-  }"
+| "execute_instruction s _ (load register type pointer align) = load_value s register pointer"
   (* Get values, add according to wrap option (or poison), and store in register. *)
-| "execute_instruction (r, s, h) _ (add register wrap type v1 v2) = do {
-    v1' \<leftarrow> get_value r v1;
-    v2' \<leftarrow> get_value r v2;
+| "execute_instruction s _ (add register wrap type v1 v2) = do {
+    v1' \<leftarrow> get_register s v1;
+    v2' \<leftarrow> get_register s v2;
     res \<leftarrow> add_values wrap v1' v2';
-    r' \<leftarrow> set_register r register res;
-    return (r', s, h)
+    set_register s register res
   }"
   (* Get values, do comparison, and store in register. *)
-| "execute_instruction (r, s, h) _ (icmp register same_sign cond type v1 v2) = do {
-    v1' \<leftarrow> get_value r v1;
-    v2' \<leftarrow> get_value r v2;
+| "execute_instruction s _ (icmp register same_sign cond type v1 v2) = do {
+    v1' \<leftarrow> get_register s v1;
+    v2' \<leftarrow> get_register s v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
-    r' \<leftarrow> set_register r register res;
-    return (r', s, h)
+    set_register s register res
   }"
   (* Check previous executed block, store proper value in register. *)
-| "execute_instruction (r, s, h) p (phi register type values) = do {
+| "execute_instruction s p (phi register type values) = do {
     v \<leftarrow> phi_lookup p values;
-    v' \<leftarrow> get_value r v;
-    r' \<leftarrow> set_register r register v';
-    return (r', s, h)
+    v' \<leftarrow> get_register s v;
+    set_register s register v'
   }"
 
-lemma "get_register r name = err unknown_register \<Longrightarrow> wp (execute_instruction (r,s,m) p (alloca name type align)) Q"
-  apply (simp only: execute_instruction.simps(1))
-  apply (intro wp_intro; simp)
-  oops
+thm execute_instruction.simps
 
-lemma "abs_value s value = Some v \<Longrightarrow> abs_value s pr = Some (addr a) \<Longrightarrow> proof_memory s a \<noteq> None \<Longrightarrow>
-    wp (execute_instruction s p (store type value (ptr pr) align))
-    (\<lambda>x. (abs_value x = abs_value s \<and> proof_memory x = (proof_memory s)(a \<mapsto> Some v)))"
-  apply (simp only: execute_instruction.simps(2))
-  apply (intro wp_intro; simp)
-  oops
+lemma wp_execute_alloca_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s (reg name) = None"
+  shows "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
+  apply (simp only: execute_instruction.simps)
+  using assms
+  by (intro wp_intro; auto)
+
+lemma wp_case_value_addr_intro[wp_intro]:
+  assumes "\<And>x. a = addr x \<Longrightarrow> wp_gen (f x) Q E"
+  assumes "\<not>(\<exists>x. a = addr x) \<Longrightarrow> wp_gen g Q E"
+  shows "wp_gen (case a of addr x \<Rightarrow> f x | _ \<Rightarrow> g) Q E"
+  using assms
+  unfolding wp_gen_def
+  by (cases "a"; auto)
+
+lemma wp_execute_store_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s pointer = Some (addr a)"
+  assumes "register_\<alpha> s value = Some v"
+  assumes "memory_\<alpha> s a \<noteq> None"
+  shows "wp (execute_instruction s p (store type value (ptr pointer) align)) (\<lambda>s'. register_\<alpha> s' = register_\<alpha> s \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)))"
+  apply simp
+  unfolding store_value_def
+  using assms
+  apply simp
+  by (intro wp_intro; auto)
+
+lemma wp_execute_load_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s pointer = Some (addr a)"
+  assumes "register_\<alpha> s (reg register) = None"
+  assumes "memory_\<alpha> s a = Some (Some v)"
+  shows "wp (execute_instruction s p (load register type (ptr pointer) align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg register := Some v))"
+  apply simp
+  unfolding load_value_def
+  using assms
+  apply simp
+  by (intro wp_intro; simp; simp)
+
+(* Prove register assignment results... *)
+lemma wp_execute_add_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s v1 = Some (vi32 v1i32)"
+  assumes "register_\<alpha> s v2 = Some (vi32 v2i32)"
+  assumes "register_\<alpha> s (reg register) = None"
+  shows "wp (execute_instruction s p (add register wrap type v1 v2)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s)"
+  apply simp
+  using assms
+  apply (intro wp_intro)
+      apply simp
+     apply simp
+    defer
+    apply simp
+   apply simp
+  apply simp
+  by (cases wrap; auto; intro wp_intro; simp)
 
 
 subsection "Blocks and functions"
@@ -214,15 +225,15 @@ fun execute_block :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_i
     s' \<leftarrow> execute_instruction s previous i;
     execute_block s' previous (is, t)
   }"
-| "execute_block (r, s, h) previous (_, br_i1 v l1 l2) = do {
-    val \<leftarrow> get_value r v;
+| "execute_block s previous (_, br_i1 v l1 l2) = do {
+    val \<leftarrow> get_register s v;
     label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
-    return ((r, s, h), branch_label label)
+    return (s, branch_label label)
   }"
 | "execute_block s previous (_, br_label l) = return (s, branch_label l)"
-| "execute_block (r, s, h) previous (_, ret t v) = do {
-    res \<leftarrow> get_value r v;
-    return ((r, s, h), return_value res)
+| "execute_block s previous (_, ret t v) = do {
+    res \<leftarrow> get_register s v;
+    return (s, return_value res)
   }"
 
 partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> (state * llvm_value option) result" where
@@ -248,13 +259,7 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
     return r
   }"
 
-lemma "wp (do { (s, r) \<leftarrow> execute_block empty_state None ([], ret i32 (val (vi32 0))); return r}) (\<lambda>r. r = return_value (vi32 0))"
-  unfolding empty_state_def empty_register_model_def empty_memory_model_def
-  apply simp
-  apply (intro wp_intro)
-  by (simp add: get_value_def)
-
-lemma block_return_iff[simp]: "wlp (execute_block s p (instrs, final))
+lemma block_return_iff: "wlp (execute_block s p (instrs, final))
   (\<lambda>(s', r). case final of
     ret _ _ \<Rightarrow> (\<exists>v. r = return_value v)
   | br_i1 _ _ _ \<Rightarrow> (\<exists>l. r = branch_label l)

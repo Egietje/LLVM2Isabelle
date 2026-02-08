@@ -2,61 +2,46 @@ theory Registers
   imports Definitions
 begin
 
+section "Simps"
+
+lemma memory_\<alpha>_eq[simp]: "memory_\<alpha> (r,s,h) = memory_\<alpha> (r',s,h)"
+  apply (rule ext)
+  subgoal for x
+    by (cases x; simp)
+  done
+
+
 section "Lemmas"
 
-lemma wp_set_register_intro[wp_intro]:
-  assumes "get_register r n = err unknown_register"
-  assumes "\<And>r'. set_register r n v = ok r' \<Longrightarrow> Q r'"
-  shows "wp (set_register r n v) Q"
+named_theorems register_op_intro
+
+lemma wp_set_register_op_intro[THEN consequence, register_op_intro]:
+  "register_\<alpha> (r,s,h) (reg n) = None \<Longrightarrow> wp (set_register_op r n v) (\<lambda>r'. register_\<alpha> (r',s,h) = (register_\<alpha> (r,s,h))(reg n := Some v))"
+  unfolding set_register_op_def
+  apply (intro wp_intro; auto; intro wp_intro; rule ext)
+  subgoal for n'
+    by (cases n'; simp)
+  done
+
+lemma wp_set_register_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s (reg n) = None"
+  shows "wp (set_register s n v) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg n := Some v) \<and> memory_\<alpha> s' = memory_\<alpha> s)"
+  unfolding set_register_def
   using assms
-  unfolding set_register_def get_register_def
-  by (cases "Mapping.lookup r n"; simp)
+  by (cases s; intro wp_intro register_op_intro wp_return_intro; simp)
 
 
-lemma register_empty_get_unknown: "get_register empty_register_model n = err unknown_register"
-  unfolding get_register_def empty_register_model_def
-  by simp
+lemma wp_get_register_op_intro[THEN consequence, register_op_intro]:
+  assumes "register_\<alpha> (r,s,h) (reg n) = Some v"
+  shows "wp (get_register_op r n) (\<lambda>v'. v' = v)"
+  unfolding get_register_op_def
+  using assms
+  by (intro wp_intro; auto)
 
-
-lemma register_set_ok_unknown: "get_register r n = err unknown_register \<longleftrightarrow> (\<exists>r'. set_register r n v = ok r')"
-  unfolding set_register_def get_register_def
-  by (auto split: if_splits simp add: option.case_eq_if)
-
-
-lemma register_set_independent_get: "n \<noteq> n' \<Longrightarrow> set_register r n' v' = ok r' \<Longrightarrow> get_register r n = get_register r' n"
-  unfolding get_register_def set_register_def
-  by (cases "Mapping.lookup r n'"; auto)
-
-lemma register_set_independent_get_wlp: "n \<noteq> n' \<Longrightarrow> wlp (set_register r n' v) (\<lambda>r'. get_register r' n = get_register r n)"
-  unfolding get_register_def set_register_def
-  by (cases "Mapping.lookup r n'"; simp)
-
-
-lemma register_set_get: "set_register r n v = ok r' \<Longrightarrow> get_register r' n = ok v"
-  unfolding set_register_def get_register_def
-  by (auto split: if_splits simp add: option.case_eq_if)
-
-lemma register_set_get_wlp: "wlp (do { r' \<leftarrow> set_register r n v; get_register r n }) ((=) v)"
-  unfolding set_register_def get_register_def
-  apply (cases "Mapping.lookup r n"; simp)
-  by (intro wp_intro; simp)
-
-
-lemma register_get_override: "get_register r n = ok v \<Longrightarrow> set_register r n v' = err register_override"
-  unfolding set_register_def get_register_def option.case_eq_if
-  by (simp split: if_splits)
-
-lemma register_get_override_wlp: "wlp (get_register r n) (\<lambda>_. set_register r n v = err register_override)"
-  unfolding get_register_def set_register_def
-  by (simp add: option.case_eq_if)
-
-
-lemma register_set_override: "set_register r n v = ok r' \<Longrightarrow> set_register r' n v' = err register_override"
-  unfolding set_register_def option.case_eq_if
-  by (auto split: if_splits)
-
-lemma register_set_override_wlp: "wlp (set_register r n v) (\<lambda>r'. set_register r' n v' = err register_override)"
-  unfolding get_register_def set_register_def
-  by (cases "Mapping.lookup r n"; simp)
+lemma wp_get_register_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s n = Some v"
+  shows "wp (get_register s n) (\<lambda>v'. v' = v)"
+  using assms
+  by (cases s; cases n; simp; intro register_op_intro; simp)
 
 end

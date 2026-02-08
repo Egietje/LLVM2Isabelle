@@ -119,7 +119,7 @@ lemma wp_err_intro[wp_intro, simp]:
   using assms
   by simp
 
-lemma wp_return_intro[wp_intro, simp]:
+lemma wp_return_intro[wp_intro]:
   assumes "Q x"
   shows "wp_gen (return x) Q E"
   using assms
