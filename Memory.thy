@@ -7,10 +7,16 @@ section "Simps"
 named_theorems single_memory_simps
 named_theorems single_memory_intro
 
-lemma register_\<alpha>_eq[simp]: "register_\<alpha> (r,s,h) = register_\<alpha> (r,s',h')"
+lemma ssa_\<alpha>_eq[simp]: "ssa_\<alpha> (l,s,h) = ssa_\<alpha> (l,s',h')"
   apply (rule ext)
   subgoal for x
-    by (cases x; simp)
+    by (induction l arbitrary: s h; cases x; simp; metis)
+  done
+
+lemma ssa_layer_\<alpha>_eq[simp]: "ssa_layer_\<alpha> (l,s,h) = ssa_layer_\<alpha> (l,s',h')"
+  apply (rule ext)
+  subgoal for x
+    by (induction l arbitrary: s h; cases x; simp; metis)
   done
 
 lemma unfold_memory_\<alpha>:
@@ -162,15 +168,15 @@ lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
   shows "wp (set_single_memory m a v) (\<lambda>m'. single_memory_\<alpha> m' = (single_memory_\<alpha> m)(a := Some (Some v)))"
   using assms
   unfolding set_single_memory_def
-  by (intro wp_intro; simp add: single_memory_simps)
+  by (intro wp_intro wp_return_intro; simp add: single_memory_simps)
                                                                                
 lemma wp_set_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
+  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_layer_\<alpha> s = ssa_layer_\<alpha> s')"
   using assms 
   apply (cases a; cases s; simp)
   unfolding set_single_memory_def
-  by (intro wp_intro; simp add: single_memory_simps; rule ext; simp)+
+  by (intro wp_intro wp_return_intro; simp add: single_memory_simps; rule ext; simp)+
 
 
 lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
@@ -178,18 +184,18 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
   shows "wp (free_single_memory s a) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := None))"
   using assms
   unfolding free_single_memory_def
-  apply (intro wp_intro)
+  apply (intro wp_intro wp_return_intro)
   apply (simp add: single_memory_simps)
   by (simp add: single_memory_simps)
 
 lemma wp_free_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_layer_\<alpha> s = ssa_layer_\<alpha> s')"
   using assms
   apply (cases a; cases s; simp)
-  apply (intro wp_intro single_memory_intro; simp; rule ext)
+  apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
   subgoal for _ _ _ _ _ a' by (cases a'; simp)
-  apply (intro wp_intro single_memory_intro; simp; rule ext)
+  apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
   subgoal for _ _ _ _ _ a' by (cases a'; simp)
   done
 
@@ -197,16 +203,16 @@ lemma wp_free_memory_intro[THEN consequence, wp_intro]:
 lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
   "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None))"
   unfolding allocate_single_memory_def
-  by (intro wp_intro; auto simp: single_memory_simps)
+  by (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
 
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_layer_\<alpha> s = ssa_layer_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
-  by (cases s; intro wp_intro; auto)
+  by (cases s; intro wp_intro wp_return_intro; auto)
 
 lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_layer_\<alpha> s = ssa_layer_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
-  by (cases s; intro wp_intro; auto)
+  by (cases s; intro wp_intro wp_return_intro; auto)
 
 end

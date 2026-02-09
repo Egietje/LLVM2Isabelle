@@ -7,7 +7,7 @@ section "Definitions"
 
 subsection "Types"
 
-datatype error = unknown_register | uninitialized_register | register_override
+datatype error = unknown_ssa_name | ssa_override
   | unallocated_address | uninitialized_address
   | not_an_address | incompatible_types | unknown_label
   | phi_no_previous_block | phi_label_not_found
@@ -119,7 +119,7 @@ lemma wp_err_intro[wp_intro, simp]:
   using assms
   by simp
 
-lemma wp_return_intro[wp_intro]:
+lemma wp_return_intro:
   assumes "Q x"
   shows "wp_gen (return x) Q E"
   using assms

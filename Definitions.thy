@@ -15,11 +15,12 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
 type_synonym llvm_register_name = string
+type_synonym llvm_ssa_name = string
 
-datatype llvm_value_ref = reg llvm_register_name | val llvm_value
+datatype llvm_value_ref = ssa_val llvm_ssa_name | val llvm_value
 
 (* Should only have a memory address or memory address... *)
-datatype llvm_pointer = ptr llvm_value_ref
+type_synonym llvm_pointer = llvm_value_ref
 
 type_synonym llvm_label = string
 
@@ -73,44 +74,55 @@ section "Registers and Memory"
 
 subsection "Definitions"
 
-type_synonym ('n, 'v) register_model = "('n, 'v) mapping"
-type_synonym llvm_register_model = "(llvm_register_name, llvm_value) register_model"
+datatype ('n, 'v) ssa = ssa_bottom "('n, 'v) mapping" | ssa_layer "('n, 'v) mapping" "('n, 'v) ssa"
+type_synonym llvm_ssa_model = "(llvm_ssa_name, llvm_value) ssa"
 
-definition empty_register_model :: "('n, 'v) register_model" where
-  "empty_register_model = Mapping.empty"
+definition empty_ssa :: "('n, 'v) ssa" where
+  "empty_ssa = ssa_bottom Mapping.empty"
 
 
 datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
 type_synonym 'a memory_model = "'a memory_value list"
 type_synonym llvm_memory_model = "llvm_value memory_model"
 
-definition empty_memory_model :: "'a memory_model" where
-  "empty_memory_model = []"
+definition empty_memory :: "'a memory_model" where
+  "empty_memory = []"
 
-type_synonym state = "llvm_register_model * llvm_memory_model * llvm_memory_model"
+type_synonym state = "llvm_ssa_model * llvm_memory_model * llvm_memory_model"
 
 definition empty_state :: "state" where
-  "empty_state = (empty_register_model, empty_memory_model, empty_memory_model)"
+  "empty_state = (empty_ssa, empty_memory, empty_memory)"
 
 
-subsection "Register operations"
+subsection "SSA-value operations"
 
-definition get_register_op :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_register_op r n = (case Mapping.lookup r n of None \<Rightarrow> err unknown_register | Some v \<Rightarrow> ok v)"
+fun get_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v result" where
+  "get_ssa_value (ssa_bottom l) n = (case Mapping.lookup l n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
+| "get_ssa_value (ssa_layer l ls) n = (case Mapping.lookup l n of None \<Rightarrow> get_ssa_value ls n | Some v \<Rightarrow> ok v)"
 
-fun get_register :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
-  "get_register (r,s,h) v = (case v of (val va) \<Rightarrow> ok va | (reg re) \<Rightarrow> get_register_op r re)"
+fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
+  "get_ssa _ (val v) = ok v"
+| "get_ssa (l,s,h) (ssa_val n) = get_ssa_value l n"
 
 
-definition set_register_op :: "('n, 'v) register_model \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register_model result" where
-  "set_register_op r n v = (case Mapping.lookup r n of None \<Rightarrow> ok (Mapping.update n v r) | Some _ \<Rightarrow> err register_override)"
+fun set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa result" where
+  "set_ssa_value (ssa_bottom l) n v = (case Mapping.lookup l n of None \<Rightarrow> ok (ssa_bottom (Mapping.update n v l)) | Some _ \<Rightarrow> err ssa_override)"
+| "set_ssa_value (ssa_layer l ls) n v = (case Mapping.lookup l n of None \<Rightarrow> ok (ssa_layer (Mapping.update n v l) ls) | Some _ \<Rightarrow> err ssa_override)"
 
-definition set_register :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
-  "set_register s n v = do {
-    (r,s,h) \<leftarrow> return s;
-    r' \<leftarrow> set_register_op r n v;
-    return (r',s,h)
+definition set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
+  "set_ssa s n v = do {
+    (l,s,h) \<leftarrow> return s;
+    l' \<leftarrow> set_ssa_value l n v;
+    return (l',s,h)
   }"
+
+
+definition new_ssa_value_layer :: "('n, 'v) ssa \<Rightarrow> ('n, 'v) ssa" where
+  "new_ssa_value_layer l = ssa_layer Mapping.empty l"
+
+fun new_ssa_layer :: "state \<Rightarrow> state" where
+  "new_ssa_layer (l,s,h) = (new_ssa_value_layer l, s, h)"
+
 
 subsection "Memory operations"
 
@@ -198,10 +210,16 @@ fun memory_\<alpha> :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_valu
 | "memory_\<alpha> (r,s,h) (haddr a) = single_memory_\<alpha> h a"
 
 
-subsection "Register"
+subsection "SSA"
 
-fun register_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
-  "register_\<alpha> (r,s,h) (reg n) = Mapping.lookup r n"
-| "register_\<alpha> (r,s,h) (val v) = Some v"
+fun ssa_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
+  "ssa_\<alpha> (r,s,h) (val v) = Some v"
+| "ssa_\<alpha> (ssa_bottom l,s,h) (ssa_val n) = Mapping.lookup l n"
+| "ssa_\<alpha> (ssa_layer l ls,s,h) (ssa_val n) = (case Mapping.lookup l n of None \<Rightarrow> ssa_\<alpha> (ls,s,h) (ssa_val n) | Some v \<Rightarrow> Some v)"
+
+fun ssa_layer_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
+  "ssa_layer_\<alpha> (r,s,h) (val v) = Some v"
+| "ssa_layer_\<alpha> (ssa_bottom l,s,h) (ssa_val n) = Mapping.lookup l n"
+| "ssa_layer_\<alpha> (ssa_layer l ls,s,h) (ssa_val n) = Mapping.lookup l n"
 
 end

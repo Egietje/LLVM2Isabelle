@@ -6,41 +6,41 @@ section "Simple Branching"
 
 definition sbmain :: "llvm_instruction_block" where
   "sbmain = ([
-    alloca ''%1'' i32 (Some 4),
-    alloca ''%2'' i32 (Some 4),
-    alloca ''%3'' i32 (Some 4),
-    alloca ''%4'' i32 (Some 4),
-    alloca ''%5'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''%1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''%2'')) (Some 4),
-    store i32 (val (vi32 2)) (ptr (reg ''%3'')) (Some 4),
-    load ''%6'' i32 (ptr (reg ''%2'')) (Some 4),
-    add ''%7'' add_nsw i32 (reg ''%6'') (val (vi32 1)),
-    load ''%8'' i32 (ptr (reg ''%3'')) (Some 4),
-    icmp ''%9'' False comp_eq i32 (reg ''%7'') (reg ''%8'')],
-    br_i1 (reg ''%9'') ''10'' ''12''
+    alloca ''1'' i32 (Some 4),
+    alloca ''2'' i32 (Some 4),
+    alloca ''3'' i32 (Some 4),
+    alloca ''4'' i32 (Some 4),
+    alloca ''5'' i32 (Some 4),
+    store i32 (val (vi32 0)) (ssa_val ''1'') (Some 4),
+    store i32 (val (vi32 1)) (ssa_val ''2'') (Some 4),
+    store i32 (val (vi32 2)) (ssa_val ''3'') (Some 4),
+    load ''6'' i32 (ssa_val ''2'') (Some 4),
+    add ''7'' add_nsw i32 (ssa_val ''6'') (val (vi32 1)),
+    load ''8'' i32 (ssa_val ''3'') (Some 4),
+    icmp ''9'' False comp_eq i32 (ssa_val ''7'') (ssa_val ''8'')],
+    br_i1 (ssa_val ''9'') ''10'' ''12''
   )"
 
 definition sb10 :: "llvm_instruction_block" where
   "sb10 = ([
-    store i32 (val (vi32 3)) (ptr (reg ''%4'')) (Some 4),
-    load ''%11'' i32 (ptr (reg ''%4'')) (Some 4),
-    store i32 (reg ''%11'') (ptr (reg ''%3'')) (Some 4)],
+    store i32 (val (vi32 3)) (ssa_val ''4'') (Some 4),
+    load ''11'' i32 (ssa_val ''4'') (Some 4),
+    store i32 (ssa_val ''11'') (ssa_val ''3'') (Some 4)],
     br_label ''14''
   )"
 
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([
-    store i32 (val (vi32 4)) (ptr (reg ''%5'')) (Some 4),
-    load ''%13'' i32 (ptr (reg ''%5'')) (Some 4),
-    store i32 (reg ''%13'') (ptr (reg ''%3'')) (Some 4)],
+    store i32 (val (vi32 4)) (ssa_val ''5'') (Some 4),
+    load ''13'' i32 (ssa_val ''5'') (Some 4),
+    store i32 (ssa_val ''13'') (ssa_val ''3'') (Some 4)],
     br_label ''14''
   )"
 
 definition sb14 :: "llvm_instruction_block" where
   "sb14 = ([
-    load ''%15'' i32 (ptr (reg ''%3'')) (Some 4)],
-    ret i32 (reg ''%15'')
+    load ''15'' i32 (ssa_val ''3'') (Some 4)],
+    ret i32 (ssa_val ''15'')
   )"
 
 definition simple_branching_main :: "llvm_function" where
@@ -81,8 +81,8 @@ define dso_local i32 @main() #0 {
 }
 *)
 
-code_deps execute_function
 value "execute_function empty_state simple_branching_main"
+
 
 section "Phi Node"
 
@@ -92,17 +92,17 @@ definition pmain :: "llvm_instruction_block" where
     alloca ''2'' i32 (Some 4),
     alloca ''3'' i32 (Some 4),
     alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''2'')) (Some 4),
-    load ''5'' i32 (ptr (reg ''2'')) (Some 4),
-    icmp ''6'' False comp_ne i32 (reg ''5'') (val (vi32 0))],
-    br_i1 (reg ''6'') ''7'' ''9''
+    store i32 (val (vi32 0)) (ssa_val ''1'') (Some 4),
+    store i32 (val (vi32 1)) (ssa_val ''2'') (Some 4),
+    load ''5'' i32 (ssa_val ''2'') (Some 4),
+    icmp ''6'' False comp_ne i32 (ssa_val ''5'') (val (vi32 0))],
+    br_i1 (ssa_val ''6'') ''7'' ''9''
   )"
 
 definition p7 :: "llvm_instruction_block" where
   "p7 = ([
-    store i32 (val (vi32 1)) (ptr (reg ''4'')) (Some 4),
-    load ''8'' i32 (ptr (reg ''4'')) (Some 4)],
+    store i32 (val (vi32 1)) (ssa_val ''4'') (Some 4),
+    load ''8'' i32 (ssa_val ''4'') (Some 4)],
     br_label ''10''
   )"
 
@@ -113,10 +113,10 @@ definition p9 :: "llvm_instruction_block" where
 
 definition p10 :: "llvm_instruction_block" where
   "p10 = ([
-    phi ''11'' i32 [(''7'', reg ''8''), (''9'', val (vi32 0))],
-    store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
-    load ''12'' i32 (ptr (reg ''3'')) (Some 4)],
-    ret i32 (reg ''12'')
+    phi ''11'' i32 [(''7'', ssa_val ''8''), (''9'', val (vi32 0))],
+    store i32 (ssa_val ''11'') (ssa_val ''3'') (Some 4),
+    load ''12'' i32 (ssa_val ''3'') (Some 4)],
+    ret i32 (ssa_val ''12'')
   )"
 
 definition phi_main :: "llvm_function" where
@@ -155,6 +155,6 @@ define dso_local i32 @main() #0 {
 }
 *)
 
-value "execute_function (empty_register_model, empty_memory_model, empty_memory_model) phi_main"
+value "execute_function empty_state phi_main"
 
 end
