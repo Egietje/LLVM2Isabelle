@@ -19,10 +19,6 @@ lemma ssa_set_\<alpha>_eq[simp]: "ssa_set_\<alpha> (vs,s,h) = ssa_set_\<alpha> (
     by (induction vs arbitrary: s h; cases x; simp; metis)
   done
 
-lemma unfold_memory_\<alpha>:
-  "memory_\<alpha> (r,s,h) = (\<lambda>saddr a \<Rightarrow> single_memory_\<alpha> s a | haddr a \<Rightarrow> single_memory_\<alpha> h a)"
-  by (simp add: fun_eq_iff split: llvm_address.splits)
-
 
 lemma single_memory_\<alpha>_set[single_memory_simps]:
   assumes "single_memory_\<alpha> s a \<noteq> None"
@@ -32,8 +28,8 @@ lemma single_memory_\<alpha>_set[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_set_heap[simp]:
-  assumes "memory_\<alpha> (r,s,h) (haddr a) \<noteq> None"
-  shows "memory_\<alpha> (r,s,h[a := mem_val v]) = ((memory_\<alpha> (r,s,h))((haddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (vs,s,h) (haddr a) \<noteq> None"
+  shows "memory_\<alpha> (vs,s,h[a := mem_val v]) = ((memory_\<alpha> (vs,s,h))((haddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -41,8 +37,8 @@ lemma memory_\<alpha>_set_heap[simp]:
   done
 
 lemma memory_\<alpha>_set_stack[simp]:
-  assumes "memory_\<alpha> (r,s,h) (saddr a) \<noteq> None"
-  shows "memory_\<alpha> (r,s[a := mem_val v],h) = ((memory_\<alpha> (r,s,h))((saddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (vs,s,h) (saddr a) \<noteq> None"
+  shows "memory_\<alpha> (vs,s[a := mem_val v],h) = ((memory_\<alpha> (vs,s,h))((saddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -64,13 +60,13 @@ lemma single_memory_\<alpha>_allocated[single_memory_simps]:
 
 lemma memory_\<alpha>_allocate_heap_eq:
   assumes "a \<noteq> (haddr (length h))"
-  shows "memory_\<alpha> (r,s,h@[mem_unset]) a = memory_\<alpha> (r,s,h) a"
+  shows "memory_\<alpha> (vs,s,h@[mem_unset]) a = memory_\<alpha> (vs,s,h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
 lemma memory_\<alpha>_allocate_stack_eq:
   assumes "a \<noteq> (saddr (length s))"
-  shows "memory_\<alpha> (r,s@[mem_unset],h) a = memory_\<alpha> (r,s,h) a"
+  shows "memory_\<alpha> (vs,s@[mem_unset],h) a = memory_\<alpha> (vs,s,h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
@@ -89,14 +85,14 @@ lemma single_memory_\<alpha>_free[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_free_heap[simp]:
-  "memory_\<alpha> (r,s,h[a := mem_freed]) = (memory_\<alpha> (r,s,h))(haddr a := None)"
+  "memory_\<alpha> (vs,s,h[a := mem_freed]) = (memory_\<alpha> (vs,s,h))(haddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)
   done
 
 lemma memory_\<alpha>_free_stack[simp]:
-  "memory_\<alpha> (r,s[a := mem_freed],h) = (memory_\<alpha> (r,s,h))(saddr a := None)"
+  "memory_\<alpha> (vs,s[a := mem_freed],h) = (memory_\<alpha> (vs,s,h))(saddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)

@@ -40,12 +40,12 @@ lemma wp_set_ssa_intro[THEN consequence, wp_intro]:
 
 
 lemma wp_reset_ssa_assigned_intro[THEN consequence, wp_intro]:
-  shows "wp (return (reset_ssa_assigned s)) (\<lambda>s'. ssa_set_\<alpha> s' = (\<lambda>n. False) \<and> ssa_\<alpha> s' = ssa_\<alpha> s \<and> memory_\<alpha> s' = memory_\<alpha> s)"
+  shows "wp (return (reset_ssa_assigned s)) (\<lambda>s'. ssa_set_\<alpha> s' = (\<lambda>_. False) \<and> ssa_\<alpha> s' = ssa_\<alpha> s \<and> memory_\<alpha> s' = memory_\<alpha> s)"
   apply (cases s; simp)
   apply (intro wp_intro wp_return_intro; auto; rule ext)
-  subgoal for vs _ _ n by (cases vs; cases n; simp)
-  subgoal for vs _ _ n by (cases vs; cases n; simp)
-  subgoal for vs _ _ n by (cases vs; cases n; simp)
+  subgoal for vs s h n by (cases vs; cases n; simp)
+  subgoal for vs s h n by (cases vs; cases n; simp)
+  subgoal for vs s h a by (cases vs; cases a; simp)
   done
 
 

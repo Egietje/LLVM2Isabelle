@@ -14,7 +14,6 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
-type_synonym llvm_register_name = string
 type_synonym llvm_ssa_name = string
 
 datatype llvm_value_ref = ssa_val llvm_ssa_name | val llvm_value
@@ -36,12 +35,12 @@ datatype llvm_compare_condition = comp_eq | comp_ne
 type_synonym llvm_same_sign = bool
 
 
-datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align option"
+datatype llvm_instruction = alloca llvm_ssa_name llvm_type "llvm_align option"
                           | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
-                          | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
-                          | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
-                          | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | phi llvm_register_name llvm_type "(llvm_label * llvm_value_ref) list"
+                          | load llvm_ssa_name llvm_type llvm_pointer "llvm_align option"
+                          | add llvm_ssa_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+                          | icmp llvm_ssa_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
+                          | phi llvm_ssa_name llvm_type "(llvm_label * llvm_value_ref) list"
 
 datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
                                      | br_i1 llvm_value_ref llvm_label llvm_label
@@ -96,6 +95,8 @@ definition empty_state :: "state" where
 
 subsection "SSA-value operations"
 
+(* Get *)
+
 fun get_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v result" where
   "get_ssa_value (ssa m a) n = (case Mapping.lookup m n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
 
@@ -103,17 +104,19 @@ fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value resu
   "get_ssa _ (val v) = ok v"
 | "get_ssa (l,s,h) (ssa_val n) = get_ssa_value l n"
 
+(* Set *)
 
 fun set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa result" where
   "set_ssa_value (ssa m a) n v = (if Set.member n a then err ssa_override else ok (ssa (Mapping.update n v m) (Set.insert n a)))"
 
 definition set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
   "set_ssa s n v = do {
-    (l,s,h) \<leftarrow> return s;
-    l' \<leftarrow> set_ssa_value l n v;
-    return (l',s,h)
+    (vs,s,h) \<leftarrow> return s;
+    vs' \<leftarrow> set_ssa_value vs n v;
+    return (vs',s,h)
   }"
 
+(* Reset assigned list (for branching) *)
 
 fun reset_ssa_assigned :: "state \<Rightarrow> state" where
   "reset_ssa_assigned (ssa m a,s,h) = (ssa m Set.empty, s, h)"
@@ -121,23 +124,27 @@ fun reset_ssa_assigned :: "state \<Rightarrow> state" where
 
 subsection "Memory operations"
 
+(* Allocate *)
+
 definition allocate_single_memory :: "'a memory_model \<Rightarrow> ('a memory_model * memory_model_address)" where
   "allocate_single_memory m = (m@[mem_unset], length m)"
 
 definition allocate_stack :: "state \<Rightarrow> (state * llvm_address)" where
-  "allocate_stack s = (case s of (r,s,h) \<Rightarrow> let (s', a) = allocate_single_memory s in ((r,s',h), saddr a))"
+  "allocate_stack s = (case s of (vs,s,h) \<Rightarrow> let (s', a) = allocate_single_memory s in ((vs,s',h), saddr a))"
 
 definition allocate_heap :: "state \<Rightarrow> (state * llvm_address)" where
-  "allocate_heap s = (case s of (r,s,h) \<Rightarrow> let (h', a) = allocate_single_memory h in ((r,s,h'), haddr a))"
+  "allocate_heap s = (case s of (vs,s,h) \<Rightarrow> let (h', a) = allocate_single_memory h in ((vs,s,h'), haddr a))"
 
+(* Address validity *)
 
 definition valid_single_memory_address :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> bool" where
   "valid_single_memory_address m a = (a < length m \<and> m!a \<noteq> mem_freed)"
 
 fun valid_memory_address :: "state \<Rightarrow> llvm_address \<Rightarrow> bool" where
-  "valid_memory_address (r,s,h) (haddr a) = valid_single_memory_address h a"
-| "valid_memory_address (r,s,h) (saddr a) = valid_single_memory_address s a"
+  "valid_memory_address (vs,s,h) (haddr a) = valid_single_memory_address h a"
+| "valid_memory_address (vs,s,h) (saddr a) = valid_single_memory_address s a"
 
+(* Get *)
 
 definition get_single_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a result" where
   "get_single_memory m a = do {
@@ -149,9 +156,10 @@ definition get_single_memory :: "'a memory_model \<Rightarrow> memory_model_addr
   }"
 
 fun get_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
-  "get_memory (r,s,h) (haddr a) = get_single_memory h a"
-| "get_memory (r,s,h) (saddr a) = get_single_memory s a"
+  "get_memory (vs,s,h) (haddr a) = get_single_memory h a"
+| "get_memory (vs,s,h) (saddr a) = get_single_memory s a"
 
+(* Set *)
 
 definition set_single_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a \<Rightarrow> 'a memory_model result" where
   "set_single_memory m a v = do {
@@ -160,15 +168,16 @@ definition set_single_memory :: "'a memory_model \<Rightarrow> memory_model_addr
   }"
 
 fun set_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value \<Rightarrow> state result" where
-  "set_memory (r,s,h) (haddr a) v = do {
+  "set_memory (vs,s,h) (haddr a) v = do {
     h' \<leftarrow> set_single_memory h a v;
-    return (r,s,h')
+    return (vs,s,h')
   }"
-| "set_memory (r,s,h) (saddr a) v = do {
+| "set_memory (vs,s,h) (saddr a) v = do {
     s' \<leftarrow> set_single_memory s a v;
-    return (r,s',h)
+    return (vs,s',h)
   }"
 
+(* Free *)
 
 definition free_single_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a memory_model result" where
   "free_single_memory m a = do {
@@ -177,13 +186,13 @@ definition free_single_memory :: "'a memory_model \<Rightarrow> memory_model_add
   }"
 
 fun free_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> state result" where
-  "free_memory (r,s,h) (haddr a) = do {
+  "free_memory (vs,s,h) (haddr a) = do {
     h' \<leftarrow> free_single_memory h a;
-    return (r,s,h')
+    return (vs,s,h')
   }"
-| "free_memory (r,s,h) (saddr a) = do {
+| "free_memory (vs,s,h) (saddr a) = do {
     s' \<leftarrow> free_single_memory s a;
-    return (r,s',h)
+    return (vs,s',h)
   }"
 
 
@@ -201,14 +210,14 @@ definition single_memory_\<alpha> where
   else None"
 
 fun memory_\<alpha> :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value option option" where
-  "memory_\<alpha> (r,s,h) (saddr a) = single_memory_\<alpha> s a"
-| "memory_\<alpha> (r,s,h) (haddr a) = single_memory_\<alpha> h a"
+  "memory_\<alpha> (vs,s,h) (saddr a) = single_memory_\<alpha> s a"
+| "memory_\<alpha> (vs,s,h) (haddr a) = single_memory_\<alpha> h a"
 
 
 subsection "SSA"
 
 fun ssa_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
-  "ssa_\<alpha> (r,s,h) (val v) = Some v"
+  "ssa_\<alpha> (vs,s,h) (val v) = Some v"
 | "ssa_\<alpha> (ssa m a,s,h) (ssa_val n) = Mapping.lookup m n"
 
 fun ssa_set_\<alpha> :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> bool" where

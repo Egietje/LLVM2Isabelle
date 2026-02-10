@@ -1,10 +1,8 @@
-theory LLVMInstructions
+theory Execution
   imports "Definitions" "SSAValues" "Memory"
 begin
 
-
-
-section "Execution"
+section "Instructions"
 
 
 subsection "Memory instruction helpers"
@@ -23,7 +21,7 @@ definition store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm
   }"
 
 
-definition load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
+definition load_value :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
   "load_value s n p = do {
     a \<leftarrow> get_address_from_pointer s p;
     v \<leftarrow> get_memory s a;
