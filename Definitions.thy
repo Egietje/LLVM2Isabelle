@@ -73,11 +73,11 @@ section "Registers and Memory"
 
 subsection "Definitions"
 
-datatype ('n, 'v) ssa = ssa "('n, 'v) mapping" "'n set"
+type_synonym ('n, 'v) ssa = "('n, 'v) mapping"
 type_synonym llvm_ssa_model = "(llvm_ssa_name, llvm_value) ssa"
 
 definition empty_ssa :: "('n, 'v) ssa" where
-  "empty_ssa = ssa Mapping.empty Set.empty"
+  "empty_ssa = Mapping.empty"
 
 
 datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
@@ -98,28 +98,19 @@ subsection "SSA-value operations"
 (* Get *)
 
 fun get_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_ssa_value (ssa m a) n = (case Mapping.lookup m n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
+  "get_ssa_value vs n = (case Mapping.lookup vs n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
 
 fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
   "get_ssa _ (val v) = ok v"
-| "get_ssa (l,s,h) (ssa_val n) = get_ssa_value l n"
+| "get_ssa (vs,s,h) (ssa_val n) = get_ssa_value vs n"
 
 (* Set *)
 
-fun set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa result" where
-  "set_ssa_value (ssa m a) n v = (if Set.member n a then err ssa_override else ok (ssa (Mapping.update n v m) (Set.insert n a)))"
+definition set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa" where
+  "set_ssa_value vs n v = Mapping.update n v vs"
 
-definition set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
-  "set_ssa s n v = do {
-    (vs,s,h) \<leftarrow> return s;
-    vs' \<leftarrow> set_ssa_value vs n v;
-    return (vs',s,h)
-  }"
-
-(* Reset assigned list (for branching) *)
-
-fun reset_ssa_assigned :: "state \<Rightarrow> state" where
-  "reset_ssa_assigned (ssa m a,s,h) = (ssa m Set.empty, s, h)"
+fun set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state" where
+  "set_ssa (vs,s,h) n v = (set_ssa_value vs n v,s,h)"
 
 
 subsection "Memory operations"
@@ -218,9 +209,6 @@ subsection "SSA"
 
 fun ssa_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
   "ssa_\<alpha> (vs,s,h) (val v) = Some v"
-| "ssa_\<alpha> (ssa m a,s,h) (ssa_val n) = Mapping.lookup m n"
-
-fun ssa_set_\<alpha> :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> bool" where
-  "ssa_set_\<alpha> (ssa m a,s,h) n = Set.member n a"
+| "ssa_\<alpha> (vs,s,h) (ssa_val n) = Mapping.lookup vs n"
 
 end

@@ -1,5 +1,5 @@
 theory ExamplePrograms
-  imports "LLVMInstructions" "HOL-Library.AList_Mapping"
+  imports "Execution" "HOL-Library.AList_Mapping"
 begin
 
 section "Simple Branching"

@@ -124,20 +124,20 @@ The operational semantics are defined as follows:
 
 Execution of any single instruction takes in some state and produces a state.
 This state is defined as follows:
-- It is a triple of registers, a stack, and a heap.
+- It is a triple of single static assignment (SSA) values, a stack, and a heap.
 - The stack and heap have the same underlying memory definition: a list of values. They are addressable using indices in these lists.
-- Registers are a mapping from a name to a value. (TODO: change 'registers' to 'SSA-values' in implementation and report)
+- SSA values are a mapping from a name to a value. Although LLVM only allows assigning them once per function, this only applies to their static definition, not their value in execution. As such, no such limitation is posed here. This means the verifier works on a superset of LLVM.
 
 The regular instructions currently (partly) implemented are:
-- alloca - allocates a new address in the stack, and stores the address in some register.
+- alloca - allocates a new address in the stack, and keeps track of the address with some SSA name.
 - store - stores a value at some address in the stack or heap.
-- load - loads a value from some address in the stack or heap into a register.
-- icmp - compares two values (32/64 bit signed/unsigned integers) and stores the result in a register as a single bit (boolean).
-- add - adds two values (32/64 bit signed/unsigned integers) and stores the result in a register (another 32/64 bit integer or a poison value if an overflow occurred).
-- phi - store a value from a list of possible values into a register depending on the instruction block that lead to this block.
+- load - loads a value from some address in the stack or heap and keep track of it with an SSA name.
+- icmp - compares two values (32/64 bit signed/unsigned integers) and keep track of the result as a single bit (boolean) with an SSA name.
+- add - adds two values (32/64 bit signed/unsigned integers) and keep track of the result with an SSA name (another 32/64 bit integer or a poison value if an overflow occurred).
+- phi - stores an SSA value from a list of possible values depending on the instruction block that lead to this block.
 
 The terminator instructions implemented are:
-- br - branch to a different instruction given its label (could always be the same label, or switch based on a boolean value in some register).
+- br - branch to a different instruction given its label (could always be the same label, or switch based on a boolean SSA value).
 - ret - return from the function with some value.
 
 With this implementation, basic programs consisting of these instructions can already be executed.

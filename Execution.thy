@@ -25,7 +25,7 @@ definition load_value :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_p
   "load_value s n p = do {
     a \<leftarrow> get_address_from_pointer s p;
     v \<leftarrow> get_memory s a;
-    set_ssa s n v
+    return (set_ssa s n v)
   }"
 
 
@@ -128,44 +128,42 @@ subsection "Instruction"
 
 
 fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction \<Rightarrow> state result" where
-  (* Allocate new memory value on the stack, and set the specified register to its address. *)
+  (* Allocate new memory value on the stack, and set the specified SSA name to its address. *)
   "execute_instruction s _ (alloca name type align) =
     (do {
       (s', a) \<leftarrow> return (allocate_stack s);
-      set_ssa s' name (addr a)
+      return (set_ssa s' name (addr a))
     })"
   (* Read address from pointer and store value in the stack or the heap. *)
 | "execute_instruction s _ (store type value pointer align) = store_value s value pointer"
   (* Read address from pointer and load value from either the stack or the heap. *)
-| "execute_instruction s _ (load register type pointer align) = load_value s register pointer"
-  (* Get values, add according to wrap option (or poison), and store in register. *)
-| "execute_instruction s _ (add register wrap type v1 v2) = do {
+| "execute_instruction s _ (load name type pointer align) = load_value s name pointer"
+  (* Get values, add according to wrap option (or poison), and store at SSA name. *)
+| "execute_instruction s _ (add name wrap type v1 v2) = do {
     v1' \<leftarrow> get_ssa s v1;
     v2' \<leftarrow> get_ssa s v2;
     res \<leftarrow> add_values wrap v1' v2';
-    set_ssa s register res
+    return (set_ssa s name res)
   }"
-  (* Get values, do comparison, and store in register. *)
-| "execute_instruction s _ (icmp register same_sign cond type v1 v2) = do {
+  (* Get values, do comparison, and store at SSA name. *)
+| "execute_instruction s _ (icmp name same_sign cond type v1 v2) = do {
     v1' \<leftarrow> get_ssa s v1;
     v2' \<leftarrow> get_ssa s v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
-    set_ssa s register res
+    return (set_ssa s name res)
   }"
-  (* Check previous executed block, store proper value in register. *)
-| "execute_instruction s p (phi register type values) = do {
+  (* Check previous executed block, store proper value at SSA name. *)
+| "execute_instruction s p (phi name type values) = do {
     v \<leftarrow> phi_lookup p values;
     v' \<leftarrow> get_ssa s v;
-    set_ssa s register v'
+    return (set_ssa s name v')
   }"
 
 thm execute_instruction.simps
 
 lemma wp_execute_alloca_intro[THEN consequence, wp_intro]:
-  assumes "\<not>ssa_set_\<alpha> s name"
-  shows "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> ssa_set_\<alpha> s' = (ssa_set_\<alpha> s)(name := True) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
+  "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
   apply (simp only: execute_instruction.simps)
-  using assms
   by (intro wp_intro; auto)
 
 lemma wp_case_value_addr_intro[wp_intro]:
@@ -180,7 +178,7 @@ lemma wp_execute_store_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s pointer = Some (addr a)"
   assumes "ssa_\<alpha> s value = Some v"
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_set_\<alpha> s = ssa_set_\<alpha> s')"
+  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
   apply simp
   unfolding store_value_def
   using assms
@@ -189,9 +187,8 @@ lemma wp_execute_store_intro[THEN consequence, wp_intro]:
 
 lemma wp_execute_load_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s pointer = Some (addr a)"
-  assumes "\<not>ssa_set_\<alpha> s name"
   assumes "memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> ssa_set_\<alpha> s' = (ssa_set_\<alpha> s)(name := True) \<and> ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some v))"
+  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some v))"
   apply simp
   unfolding load_value_def
   using assms
@@ -202,7 +199,6 @@ lemma wp_execute_load_intro[THEN consequence, wp_intro]:
 lemma wp_execute_add_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s v1 = Some (vi32 v1i32)"
   assumes "ssa_\<alpha> s v2 = Some (vi32 v2i32)"
-  assumes "\<not>ssa_set_\<alpha> s name"
   shows "wp (execute_instruction s p (add name wrap type v1 v2)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s)"
   apply simp
   using assms
@@ -233,11 +229,11 @@ partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_label opt
       err e \<Rightarrow> err e
     | ok (s', br) \<Rightarrow>
       (case br of
-        return_value v \<Rightarrow> ok ((reset_ssa_assigned s'), Some v)
+        return_value v \<Rightarrow> ok (s', Some v)
       | branch_label l \<Rightarrow>
         (case map_of labeled_blocks l of
           None \<Rightarrow> err unknown_label
-        | Some b' \<Rightarrow> execute_blocks (reset_ssa_assigned s') current (Some l) b' labeled_blocks
+        | Some b' \<Rightarrow> execute_blocks s' current (Some l) b' labeled_blocks
         )
       )
     )"
