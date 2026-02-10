@@ -63,20 +63,23 @@ Verification conditions are defined as $V_c (P; Q)$ which assert that if $P$ hol
 
 
 == Separation Logic <sec-separation-logic>
+
+- @separation-logic
+- Extension with better reasoning for programs with pointers/dynamic memory allocation
+
+
 == Verification Condition Generators <sec-ver-con-gen>
 
 
 == Memory Models <sec-memory-models>
-Axiomatic specification of memory operations @axiom-spec-memory-model
+- Axiomatic specification of memory operations @axiom-spec-memory-model
 
 
 == Existing imperative program verifiers <sec-existing-verifiers>
 
-Framework for VCGs using theorem provers @vcg-via-tp
-
-Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
-
-Verifying x86 binaries@peter-x86-verification
+- Framework for VCGs using theorem provers @vcg-via-tp
+- Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
+- Verifying x86 binaries@peter-x86-verification
 
 === Deductive verifiers
 
@@ -95,15 +98,11 @@ Another separation-logic based verifier is VeriFast, aimed at verifying single- 
 
 Dafny has a similar approach with a key difference: instead of compiling programs to Dafny from their source language, programmers instead create programs in the Dafny language, verify them there, and then compile them from Dafny to their preferred language.@dedver-dafny
 
-RESOLVE@dedver-resolve
-
-Whiley@dedver-whiley
-
-Frama-C@dedver-framac
-
-KIV@dedver-kiv
-
-OpenJML@dedver-jml
+- RESOLVE@dedver-resolve
+- Whiley@dedver-whiley
+- Frama-C@dedver-framac
+- KIV@dedver-kiv
+- OpenJML@dedver-jml
 
 
 
@@ -187,17 +186,17 @@ definition pmain :: "llvm_instruction_block" where
     alloca ''2'' i32 (Some 4),
     alloca ''3'' i32 (Some 4),
     alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ptr (reg ''1'')) (Some 4),
-    store i32 (val (vi32 1)) (ptr (reg ''2'')) (Some 4),
-    load ''5'' i32 (ptr (reg ''2'')) (Some 4),
-    icmp ''6'' False comp_ne i32 (reg ''5'') (val (vi32 0))],
-    br_i1 (reg ''6'') ''7'' ''9''
+    store i32 (val (vi32 0)) (ssa_val ''1'') (Some 4),
+    store i32 (val (vi32 1)) (ssa_val ''2'') (Some 4),
+    load ''5'' i32 (ssa_val ''2'') (Some 4),
+    icmp ''6'' False comp_ne i32 (ssa_val ''5'') (val (vi32 0))],
+    br_i1 (ssa_val ''6'') ''7'' ''9''
   )"
 
 definition p7 :: "llvm_instruction_block" where
   "p7 = ([
-    store i32 (val (vi32 1)) (ptr (reg ''4'')) (Some 4),
-    load ''8'' i32 (ptr (reg ''4'')) (Some 4)],
+    store i32 (val (vi32 1)) (ssa_val ''4'') (Some 4),
+    load ''8'' i32 (ssa_val ''4'') (Some 4)],
     br_label ''10''
   )"
 
@@ -208,10 +207,10 @@ definition p9 :: "llvm_instruction_block" where
 
 definition p10 :: "llvm_instruction_block" where
   "p10 = ([
-    phi ''11'' i32 [(''7'', reg ''8''), (''9'', val (vi32 0))],
-    store i32 (reg ''11'') (ptr (reg ''3'')) (Some 4),
-    load ''12'' i32 (ptr (reg ''3'')) (Some 4)],
-    ret i32 (reg ''12'')
+    phi ''11'' i32 [(''7'', ssa_val ''8''), (''9'', val (vi32 0))],
+    store i32 (ssa_val ''11'') (ssa_val ''3'') (Some 4),
+    load ''12'' i32 (ssa_val ''3'') (Some 4)],
+    ret i32 (ssa_val ''12'')
   )"
 
 definition phi_main :: "llvm_function" where
@@ -221,23 +220,26 @@ definition phi_main :: "llvm_function" where
 This can be executed as follows, which gives the proper return value:
 ```isabelle
 value "execute_function empty_state phi_main"
+
+= "ok (Some (vi32 1))" :: "llvm_value option result"
 ```
 
 
 == Weakest precondition mechanics
 
-Taking inspiration from Hoare logic, 
-To reason about the execution of 
+- Intro rules done for abstractions, some instructions
 
 
 = Rough planning
 
-- Better LLVM semantics (e.g. register overrides)
+- Better LLVM semantics
+- Finish intro rules for instructions
 - Support verification condition generation at the level of blocks
 - Add method of specifying pre- and post-conditions for code blocks 
 - Create flowchart view of code blocks
 - Match up post-condition of one block with pre-condition of subsequent block for correctness proofs
 - Support more LLVM instructions
+- Support arrays
 - Import/export from/to direct LLVM code
 
 #pagebreak()
