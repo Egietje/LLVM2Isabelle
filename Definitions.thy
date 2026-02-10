@@ -74,11 +74,11 @@ section "Registers and Memory"
 
 subsection "Definitions"
 
-datatype ('n, 'v) ssa = ssa_bottom "('n, 'v) mapping" | ssa_layer "('n, 'v) mapping" "('n, 'v) ssa"
+datatype ('n, 'v) ssa = ssa "('n, 'v) mapping" "'n set"
 type_synonym llvm_ssa_model = "(llvm_ssa_name, llvm_value) ssa"
 
 definition empty_ssa :: "('n, 'v) ssa" where
-  "empty_ssa = ssa_bottom Mapping.empty"
+  "empty_ssa = ssa Mapping.empty Set.empty"
 
 
 datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
@@ -97,8 +97,7 @@ definition empty_state :: "state" where
 subsection "SSA-value operations"
 
 fun get_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_ssa_value (ssa_bottom l) n = (case Mapping.lookup l n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
-| "get_ssa_value (ssa_layer l ls) n = (case Mapping.lookup l n of None \<Rightarrow> get_ssa_value ls n | Some v \<Rightarrow> ok v)"
+  "get_ssa_value (ssa m a) n = (case Mapping.lookup m n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
 
 fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
   "get_ssa _ (val v) = ok v"
@@ -106,8 +105,7 @@ fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value resu
 
 
 fun set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa result" where
-  "set_ssa_value (ssa_bottom l) n v = (case Mapping.lookup l n of None \<Rightarrow> ok (ssa_bottom (Mapping.update n v l)) | Some _ \<Rightarrow> err ssa_override)"
-| "set_ssa_value (ssa_layer l ls) n v = (case Mapping.lookup l n of None \<Rightarrow> ok (ssa_layer (Mapping.update n v l) ls) | Some _ \<Rightarrow> err ssa_override)"
+  "set_ssa_value (ssa m a) n v = (if Set.member n a then err ssa_override else ok (ssa (Mapping.update n v m) (Set.insert n a)))"
 
 definition set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state result" where
   "set_ssa s n v = do {
@@ -117,11 +115,8 @@ definition set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_valu
   }"
 
 
-definition new_ssa_value_layer :: "('n, 'v) ssa \<Rightarrow> ('n, 'v) ssa" where
-  "new_ssa_value_layer l = ssa_layer Mapping.empty l"
-
-fun new_ssa_layer :: "state \<Rightarrow> state" where
-  "new_ssa_layer (l,s,h) = (new_ssa_value_layer l, s, h)"
+fun reset_ssa_assigned :: "state \<Rightarrow> state" where
+  "reset_ssa_assigned (ssa m a,s,h) = (ssa m Set.empty, s, h)"
 
 
 subsection "Memory operations"
@@ -214,12 +209,9 @@ subsection "SSA"
 
 fun ssa_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
   "ssa_\<alpha> (r,s,h) (val v) = Some v"
-| "ssa_\<alpha> (ssa_bottom l,s,h) (ssa_val n) = Mapping.lookup l n"
-| "ssa_\<alpha> (ssa_layer l ls,s,h) (ssa_val n) = (case Mapping.lookup l n of None \<Rightarrow> ssa_\<alpha> (ls,s,h) (ssa_val n) | Some v \<Rightarrow> Some v)"
+| "ssa_\<alpha> (ssa m a,s,h) (ssa_val n) = Mapping.lookup m n"
 
-fun ssa_layer_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
-  "ssa_layer_\<alpha> (r,s,h) (val v) = Some v"
-| "ssa_layer_\<alpha> (ssa_bottom l,s,h) (ssa_val n) = Mapping.lookup l n"
-| "ssa_layer_\<alpha> (ssa_layer l ls,s,h) (ssa_val n) = Mapping.lookup l n"
+fun ssa_set_\<alpha> :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> bool" where
+  "ssa_set_\<alpha> (ssa m a,s,h) n = Set.member n a"
 
 end

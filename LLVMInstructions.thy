@@ -164,8 +164,8 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
 thm execute_instruction.simps
 
 lemma wp_execute_alloca_intro[THEN consequence, wp_intro]:
-  assumes "ssa_layer_\<alpha> s (ssa_val name) = None"
-  shows "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> ssa_layer_\<alpha> s' = (ssa_layer_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
+  assumes "\<not>ssa_set_\<alpha> s name"
+  shows "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> ssa_set_\<alpha> s' = (ssa_set_\<alpha> s)(name := True) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
   apply (simp only: execute_instruction.simps)
   using assms
   by (intro wp_intro; auto)
@@ -182,7 +182,7 @@ lemma wp_execute_store_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s pointer = Some (addr a)"
   assumes "ssa_\<alpha> s value = Some v"
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_layer_\<alpha> s = ssa_layer_\<alpha> s')"
+  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s' \<and> ssa_set_\<alpha> s = ssa_set_\<alpha> s')"
   apply simp
   unfolding store_value_def
   using assms
@@ -191,9 +191,9 @@ lemma wp_execute_store_intro[THEN consequence, wp_intro]:
 
 lemma wp_execute_load_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s pointer = Some (addr a)"
-  assumes "ssa_layer_\<alpha> s (ssa_val name) = None"
+  assumes "\<not>ssa_set_\<alpha> s name"
   assumes "memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> ssa_layer_\<alpha> s' = (ssa_layer_\<alpha> s)(ssa_val name := Some v) \<and> ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some v))"
+  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> ssa_set_\<alpha> s' = (ssa_set_\<alpha> s)(name := True) \<and> ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some v))"
   apply simp
   unfolding load_value_def
   using assms
@@ -204,7 +204,7 @@ lemma wp_execute_load_intro[THEN consequence, wp_intro]:
 lemma wp_execute_add_intro[THEN consequence, wp_intro]:
   assumes "ssa_\<alpha> s v1 = Some (vi32 v1i32)"
   assumes "ssa_\<alpha> s v2 = Some (vi32 v2i32)"
-  assumes "ssa_layer_\<alpha> s (ssa_val name) = None"
+  assumes "\<not>ssa_set_\<alpha> s name"
   shows "wp (execute_instruction s p (add name wrap type v1 v2)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s)"
   apply simp
   using assms
@@ -235,11 +235,11 @@ partial_function (tailrec) execute_blocks :: "state \<Rightarrow> llvm_label opt
       err e \<Rightarrow> err e
     | ok (s', br) \<Rightarrow>
       (case br of
-        return_value v \<Rightarrow> ok (s', Some v)
+        return_value v \<Rightarrow> ok ((reset_ssa_assigned s'), Some v)
       | branch_label l \<Rightarrow>
         (case map_of labeled_blocks l of
           None \<Rightarrow> err unknown_label
-        | Some b' \<Rightarrow> execute_blocks s' current (Some l) b' labeled_blocks
+        | Some b' \<Rightarrow> execute_blocks (reset_ssa_assigned s') current (Some l) b' labeled_blocks
         )
       )
     )"
