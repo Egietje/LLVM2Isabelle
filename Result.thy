@@ -7,10 +7,10 @@ section "Definitions"
 
 subsection "Types"
 
-datatype error = unknown_ssa_name | ssa_override
+datatype error = unknown_register_name
   | unallocated_address | uninitialized_address
   | not_an_address | incompatible_types | unknown_label
-  | phi_no_previous_block | phi_label_not_found
+  | phi_no_previous_block | phi_label_not_found | phi_label_not_distinct
 
 datatype 'a result = ok 'a | err error
 

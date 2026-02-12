@@ -1,5 +1,5 @@
 theory Execution
-  imports "Definitions" "SSAValues" "Memory"
+  imports "Definitions" "Registers" "Memory"
 begin
 
 section "Instructions"
@@ -9,23 +9,23 @@ subsection "Memory instruction helpers"
 
 fun get_address_from_pointer :: "state \<Rightarrow> llvm_pointer \<Rightarrow> llvm_address result" where
   "get_address_from_pointer s p = do {
-    a \<leftarrow> get_ssa s p;
+    a \<leftarrow> get_register s p;
     (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address)
   }"
 
 definition store_value :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
   "store_value s v p = do {
     address \<leftarrow> get_address_from_pointer s p;
-    value \<leftarrow> get_ssa s v;
+    value \<leftarrow> get_register s v;
     set_memory s address value
   }"
 
 
-definition load_value :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
+definition load_value :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state result" where
   "load_value s n p = do {
     a \<leftarrow> get_address_from_pointer s p;
     v \<leftarrow> get_memory s a;
-    return (set_ssa s n v)
+    return (set_register s n v)
   }"
 
 
@@ -120,6 +120,7 @@ subsection "Phi instruction helpers"
 fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_label * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
   "phi_lookup l ls = do {
     previous \<leftarrow> some_or_err l phi_no_previous_block;
+    assert phi_label_not_distinct (distinct (map fst ls));
     some_or_err (map_of ls previous) phi_label_not_found
   }"
 
@@ -132,7 +133,7 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
   "execute_instruction s _ (alloca name type align) =
     (do {
       (s', a) \<leftarrow> return (allocate_stack s);
-      return (set_ssa s' name (addr a))
+      return (set_register s' name (addr a))
     })"
   (* Read address from pointer and store value in the stack or the heap. *)
 | "execute_instruction s _ (store type value pointer align) = store_value s value pointer"
@@ -140,29 +141,24 @@ fun execute_instruction :: "state \<Rightarrow> llvm_label option \<Rightarrow> 
 | "execute_instruction s _ (load name type pointer align) = load_value s name pointer"
   (* Get values, add according to wrap option (or poison), and store at SSA name. *)
 | "execute_instruction s _ (add name wrap type v1 v2) = do {
-    v1' \<leftarrow> get_ssa s v1;
-    v2' \<leftarrow> get_ssa s v2;
+    v1' \<leftarrow> get_register s v1;
+    v2' \<leftarrow> get_register s v2;
     res \<leftarrow> add_values wrap v1' v2';
-    return (set_ssa s name res)
+    return (set_register s name res)
   }"
   (* Get values, do comparison, and store at SSA name. *)
 | "execute_instruction s _ (icmp name same_sign cond type v1 v2) = do {
-    v1' \<leftarrow> get_ssa s v1;
-    v2' \<leftarrow> get_ssa s v2;
+    v1' \<leftarrow> get_register s v1;
+    v2' \<leftarrow> get_register s v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
-    return (set_ssa s name res)
+    return (set_register s name res)
   }"
-  (* Check previous executed block, store proper value at SSA name. *)
-| "execute_instruction s p (phi name type values) = do {
-    v \<leftarrow> phi_lookup p values;
-    v' \<leftarrow> get_ssa s v;
-    return (set_ssa s name v')
-  }"
+
 
 thm execute_instruction.simps
 
 lemma wp_execute_alloca_intro[THEN consequence, wp_intro]:
-  "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
+  "wp (execute_instruction s p (alloca name type align)) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)((saddr a) := Some None)))"
   apply (simp only: execute_instruction.simps)
   by (intro wp_intro; auto)
 
@@ -175,10 +171,10 @@ lemma wp_case_value_addr_intro[wp_intro]:
   by (cases "a"; auto)
 
 lemma wp_execute_store_intro[THEN consequence, wp_intro]:
-  assumes "ssa_\<alpha> s pointer = Some (addr a)"
-  assumes "ssa_\<alpha> s value = Some v"
+  assumes "register_\<alpha> s pointer = Some (addr a)"
+  assumes "register_\<alpha> s value = Some v"
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
+  shows "wp (execute_instruction s p (store type value pointer align)) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
   apply simp
   unfolding store_value_def
   using assms
@@ -186,19 +182,20 @@ lemma wp_execute_store_intro[THEN consequence, wp_intro]:
   by (intro wp_intro; auto)
 
 lemma wp_execute_load_intro[THEN consequence, wp_intro]:
-  assumes "ssa_\<alpha> s pointer = Some (addr a)"
+  assumes "register_\<alpha> s pointer = Some (addr a)"
   assumes "memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> ssa_\<alpha> s' = (ssa_\<alpha> s)(ssa_val name := Some v))"
+  shows "wp (execute_instruction s p (load name type pointer align)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v))"
   apply simp
   unfolding load_value_def
   using assms
   apply simp
   by (intro wp_intro; simp; simp)
 
-(* Prove ssa results... *)
+(* Prove register results... *)
 lemma wp_execute_add_intro[THEN consequence, wp_intro]:
-  assumes "ssa_\<alpha> s v1 = Some (vi32 v1i32)"
-  assumes "ssa_\<alpha> s v2 = Some (vi32 v2i32)"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1i32)"
+  assumes "register_\<alpha> s v2 = Some (vi32 v2i32)"
+  (* assumes no poison! *)
   shows "wp (execute_instruction s p (add name wrap type v1 v2)) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s)"
   apply simp
   using assms
@@ -208,18 +205,24 @@ lemma wp_execute_add_intro[THEN consequence, wp_intro]:
 subsection "Blocks and functions"
 
 fun execute_block :: "state \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> (state * llvm_block_return) result" where
-  "execute_block s previous (i#is, t) = do {
-    s' \<leftarrow> execute_instruction s previous i;
-    execute_block s' previous (is, t)
+  "execute_block s previous ((phi name type values)#ps, is, t) = do {
+    v \<leftarrow> phi_lookup previous values;
+    v' \<leftarrow> get_register s v;
+    s' \<leftarrow> return (set_register s name v');
+    execute_block s' previous (ps, is, t)
   }"
-| "execute_block s previous (_, br_i1 v l1 l2) = do {
-    val \<leftarrow> get_ssa s v;
+| "execute_block s previous ([], i#is, t) = do {
+    s' \<leftarrow> execute_instruction s previous i;
+    execute_block s' previous ([], is, t)
+  }"
+| "execute_block s previous (_, _, br_i1 v l1 l2) = do {
+    val \<leftarrow> get_register s v;
     label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
     return (s, branch_label label)
   }"
-| "execute_block s previous (_, br_label l) = return (s, branch_label l)"
-| "execute_block s previous (_, ret t v) = do {
-    res \<leftarrow> get_ssa s v;
+| "execute_block s previous (_, _, br_label l) = return (s, branch_label l)"
+| "execute_block s previous (_, _, ret t v) = do {
+    res \<leftarrow> get_register s v;
     return (s, return_value res)
   }"
 
@@ -245,14 +248,5 @@ fun execute_function :: "state \<Rightarrow> llvm_function \<Rightarrow> (llvm_v
     (_, r) \<leftarrow> execute_blocks s None None is ls;
     return r
   }"
-
-lemma block_return_iff: "wlp (execute_block s p (instrs, final))
-  (\<lambda>(s', r). case final of
-    ret _ _ \<Rightarrow> (\<exists>v. r = return_value v)
-  | br_i1 _ _ _ \<Rightarrow> (\<exists>l. r = branch_label l)
-  | br_label l \<Rightarrow> r = branch_label l)"
-  apply (cases "execute_block s p (instrs, final)"; simp)
-  apply (induction instrs arbitrary: s; auto)
-  by (cases final; auto)
 
 end

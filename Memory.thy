@@ -4,7 +4,7 @@ begin
 
 section "Simps"
 
-lemma ssa_\<alpha>_eq[simp]: "ssa_\<alpha> (vs,s,h) = ssa_\<alpha> (vs,s',h')"
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (vs,s,h) = register_\<alpha> (vs,s',h')"
   apply (rule ext)
   subgoal for x
     by (cases vs; cases x; simp; metis)
@@ -163,7 +163,7 @@ lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
                                                                                
 lemma wp_set_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
+  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms 
   apply (cases a; cases s; simp)
   unfolding set_single_memory_def
@@ -181,7 +181,7 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
 
 lemma wp_free_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
+  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms
   apply (cases a; cases s; simp)
   apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
@@ -197,12 +197,12 @@ lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
   by (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
 
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
+  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
   by (cases s; intro wp_intro wp_return_intro; auto)
 
 lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> ssa_\<alpha> s = ssa_\<alpha> s')"
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
   by (cases s; intro wp_intro wp_return_intro; auto)
 

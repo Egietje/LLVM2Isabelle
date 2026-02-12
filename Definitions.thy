@@ -14,9 +14,9 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
-type_synonym llvm_ssa_name = string
+type_synonym llvm_register_name = string
 
-datatype llvm_value_ref = ssa_val llvm_ssa_name | val llvm_value
+datatype llvm_value_ref = reg llvm_register_name | val llvm_value
 
 (* Should only have a memory address or memory address... *)
 type_synonym llvm_pointer = llvm_value_ref
@@ -35,12 +35,14 @@ datatype llvm_compare_condition = comp_eq | comp_ne
 type_synonym llvm_same_sign = bool
 
 
-datatype llvm_instruction = alloca llvm_ssa_name llvm_type "llvm_align option"
+datatype llvm_phi_node = phi llvm_register_name llvm_type "(llvm_label * llvm_value_ref) list"
+
+
+datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align option"
                           | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
-                          | load llvm_ssa_name llvm_type llvm_pointer "llvm_align option"
-                          | add llvm_ssa_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
-                          | icmp llvm_ssa_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | phi llvm_ssa_name llvm_type "(llvm_label * llvm_value_ref) list"
+                          | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
+                          | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+                          | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
 
 datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
                                      | br_i1 llvm_value_ref llvm_label llvm_label
@@ -49,7 +51,7 @@ datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
 
 subsection "Blocks, functions, programs"
 
-type_synonym llvm_instruction_block = "(llvm_instruction list * llvm_terminator_instruction)"
+type_synonym llvm_instruction_block = "(llvm_phi_node list * llvm_instruction list * llvm_terminator_instruction)"
 
 type_synonym llvm_labeled_blocks = "(llvm_label * llvm_instruction_block) list"
 
@@ -73,11 +75,11 @@ section "Registers and Memory"
 
 subsection "Definitions"
 
-type_synonym ('n, 'v) ssa = "('n, 'v) mapping"
-type_synonym llvm_ssa_model = "(llvm_ssa_name, llvm_value) ssa"
+type_synonym ('n, 'v) register = "('n, 'v) mapping"
+type_synonym llvm_register_model = "(llvm_register_name, llvm_value) register"
 
-definition empty_ssa :: "('n, 'v) ssa" where
-  "empty_ssa = Mapping.empty"
+definition empty_register :: "('n, 'v) register" where
+  "empty_register = Mapping.empty"
 
 
 datatype 'a memory_value = mem_unset | mem_val 'a | mem_freed
@@ -87,30 +89,30 @@ type_synonym llvm_memory_model = "llvm_value memory_model"
 definition empty_memory :: "'a memory_model" where
   "empty_memory = []"
 
-type_synonym state = "llvm_ssa_model * llvm_memory_model * llvm_memory_model"
+type_synonym state = "llvm_register_model * llvm_memory_model * llvm_memory_model"
 
 definition empty_state :: "state" where
-  "empty_state = (empty_ssa, empty_memory, empty_memory)"
+  "empty_state = (empty_register, empty_memory, empty_memory)"
 
 
-subsection "SSA-value operations"
+subsection "Register operations"
 
 (* Get *)
 
-fun get_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v result" where
-  "get_ssa_value vs n = (case Mapping.lookup vs n of None \<Rightarrow> err unknown_ssa_name | Some v \<Rightarrow> ok v)"
+fun get_register_value :: "('n, 'v) register \<Rightarrow> 'n \<Rightarrow> 'v result" where
+  "get_register_value vs n = (case Mapping.lookup vs n of None \<Rightarrow> err unknown_register_name | Some v \<Rightarrow> ok v)"
 
-fun get_ssa :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
-  "get_ssa _ (val v) = ok v"
-| "get_ssa (vs,s,h) (ssa_val n) = get_ssa_value vs n"
+fun get_register :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value result" where
+  "get_register _ (val v) = ok v"
+| "get_register (vs,s,h) (reg n) = get_register_value vs n"
 
 (* Set *)
 
-definition set_ssa_value :: "('n, 'v) ssa \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) ssa" where
-  "set_ssa_value vs n v = Mapping.update n v vs"
+definition set_register_value :: "('n, 'v) register \<Rightarrow> 'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register" where
+  "set_register_value vs n v = Mapping.update n v vs"
 
-fun set_ssa :: "state \<Rightarrow> llvm_ssa_name \<Rightarrow> llvm_value \<Rightarrow> state" where
-  "set_ssa (vs,s,h) n v = (set_ssa_value vs n v,s,h)"
+fun set_register :: "state \<Rightarrow> llvm_register_name \<Rightarrow> llvm_value \<Rightarrow> state" where
+  "set_register (vs,s,h) n v = (set_register_value vs n v,s,h)"
 
 
 subsection "Memory operations"
@@ -207,8 +209,8 @@ fun memory_\<alpha> :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_valu
 
 subsection "SSA"
 
-fun ssa_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
-  "ssa_\<alpha> (vs,s,h) (val v) = Some v"
-| "ssa_\<alpha> (vs,s,h) (ssa_val n) = Mapping.lookup vs n"
+fun register_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value option" where
+  "register_\<alpha> (vs,s,h) (val v) = Some v"
+| "register_\<alpha> (vs,s,h) (reg n) = Mapping.lookup vs n"
 
 end
