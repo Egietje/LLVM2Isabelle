@@ -95,6 +95,8 @@ definition add_no_poison32 :: "llvm_add_wrap \<Rightarrow> word32 \<Rightarrow> 
          | add_nuw_nsw \<Rightarrow> \<not>uov \<and> \<not>sov
      )"
 
+declare add_no_poison32_def[simp]
+
 definition add_no_poison64 :: "llvm_add_wrap \<Rightarrow> word64 \<Rightarrow> word64 \<Rightarrow> bool" where
   "add_no_poison64 wrap a b = (
       let uov = unsigned_overflow64 a b;
@@ -105,6 +107,9 @@ definition add_no_poison64 :: "llvm_add_wrap \<Rightarrow> word64 \<Rightarrow> 
          | add_nsw \<Rightarrow> \<not>sov
          | add_nuw_nsw \<Rightarrow> \<not>uov \<and> \<not>sov
      )"
+
+declare add_no_poison64_def[simp]
+
 
 fun add_values :: "llvm_add_wrap \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
   "add_values wrap (vi32 a) (vi32 b) = (if add_no_poison32 wrap a b then ok (vi32 (a+b)) else ok poison)"

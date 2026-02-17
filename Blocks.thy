@@ -77,7 +77,7 @@ lemma wp_execute_branch_label_block_intro[THEN consequence, wp_intro]:
 
 lemma wp_execute_branch_i1_block_intro[THEN consequence, wp_intro]:
   assumes "\<exists>b. register_\<alpha> s value = Some (vi1 b)"
-  shows "wp (execute_block s p ([], [], br_i1 value l1 l2)) (\<lambda>(s', r). s' = s \<and> (\<exists>b. r = branch_label (if b then l1 else l2)))"
+  shows "wp (execute_block s p ([], [], br_i1 value l1 l2)) (\<lambda>(s', r). s' = s \<and> (\<exists>b. register_\<alpha> s value = Some (vi1 b) \<and> r = branch_label (if b then l1 else l2)))"
   using assms
   by (simp; intro wp_intro; auto; intro wp_intro wp_return_intro; auto)
 
