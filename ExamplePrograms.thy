@@ -49,8 +49,30 @@ lemma test:
   shows "wp (execute_block s p sbmain) Q"
   unfolding sbmain_def
   apply (intro wp_intro; auto split: if_splits)
-  using assms by simp
-    
+  subgoal premises prems for _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ r' s' h' a4 a5 a1 a2 a3 _
+  proof -
+    have reg_s': "register_\<alpha> (r',s',h') = (register_\<alpha> s)(
+                    reg ''1'' \<mapsto> addr a1,
+                    reg ''2'' \<mapsto> addr a2,
+                    reg ''3'' \<mapsto> addr a3,
+                    reg ''4'' \<mapsto> addr a4,
+                    reg ''5'' \<mapsto> addr a5,
+                    reg ''6'' \<mapsto> vi32 1,
+                    reg ''7'' \<mapsto> vi32 2,
+                    reg ''8'' \<mapsto> vi32 2,
+                    reg ''9'' \<mapsto> vi1 True)"
+      using prems by simp
+    have mem_s': "memory_\<alpha> (r',s',h') = (memory_\<alpha> s)(
+                    a4 \<mapsto> None,
+                    a5 \<mapsto> None,
+                    a1 \<mapsto> Some (vi32 0),
+                    a2 \<mapsto> Some (vi32 1),
+                    a3 \<mapsto> Some (vi32 2))"
+      using prems by simp
+    then show ?thesis using assms mem_s' reg_s' by blast
+  qed
+  done
+
 
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([],[
