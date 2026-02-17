@@ -16,6 +16,10 @@ lemma register_\<alpha>_update_eq[simp]:
   subgoal for x by (cases x; simp)
   done
 
+lemma register_\<alpha>_val_eq[simp]:
+  "register_\<alpha> s (val v) = Some v"
+  by (cases s; simp)
+
 
 section "Lemmas"
 
@@ -31,16 +35,10 @@ lemma wp_set_register_intro[THEN consequence, wp_intro]:
   by (cases s; simp; intro wp_intro register_intro; simp)
 
 
-lemma wp_get_register_value_intro[THEN consequence, register_intro]:
-  assumes "register_\<alpha> (vs,s,h) (reg n) = Some v"
-  shows "wp (get_register_value vs n) (\<lambda>v'. v' = v)"
+lemma wp_get_register_intro[THEN consequence, wp_intro]:        
+  assumes "register_\<alpha> s n \<noteq> None"
+  shows "wp (get_register s n) (\<lambda>v'. register_\<alpha> s n = Some v')"
   using assms
-  by (induction vs; simp; intro wp_intro; simp add: option.case_eq_if split: if_splits)
-
-lemma wp_get_register_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s n = Some v"
-  shows "wp (get_register s n) (\<lambda>v'. v' = v)"
-  using assms
-  by (cases s; cases n; simp; intro register_intro; simp)
+  by (cases s; cases n; simp; intro wp_intro; auto)
 
 end

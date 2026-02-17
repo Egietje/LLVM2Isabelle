@@ -1,8 +1,17 @@
 theory ExamplePrograms
-  imports "Execution" "HOL-Library.AList_Mapping"
+  imports "Blocks" "HOL-Library.AList_Mapping"
 begin
 
 section "Simple Branching"
+
+lemma reg_inj [simp]: "reg x = reg y \<longleftrightarrow> x = y"
+  by simp
+lemma saddr_inj [simp]: "saddr x = saddr y \<longleftrightarrow> x = y"
+  by simp
+lemma haddr_inj [simp]: "haddr x = haddr y \<longleftrightarrow> x = y"
+  by simp
+lemma addr_inj [simp]: "addr x = addr y \<longleftrightarrow> x = y"
+  by simp
 
 definition sbmain :: "llvm_instruction_block" where
   "sbmain = ([],[
@@ -28,6 +37,20 @@ definition sb10 :: "llvm_instruction_block" where
     store i32 (reg ''11'') (reg ''3'') (Some 4)],
     br_label ''14''
   )"
+
+lemma test:
+  assumes "\<And>s' a1 a2 a3 a4 a5. memory_\<alpha> s' =
+       (memory_\<alpha> s)(a4 \<mapsto> None, a5 \<mapsto> None, a1 \<mapsto> Some (vi32 0), a2 \<mapsto> Some (vi32 1), a3 \<mapsto> Some (vi32 2)) \<Longrightarrow>
+       register_\<alpha> s' =
+       (register_\<alpha> s)
+       (reg ''1'' \<mapsto> addr a1, reg ''2'' \<mapsto> addr a2, reg ''3'' \<mapsto> addr a3, reg ''4'' \<mapsto> addr a4,
+          reg ''5'' \<mapsto> addr a5, reg ''6'' \<mapsto> vi32 1, reg ''7'' \<mapsto> vi32 2, reg ''8'' \<mapsto> vi32 2,
+          reg ''9'' \<mapsto> vi1 True) \<Longrightarrow> Q (s', branch_label ''10'')"
+  shows "wp (execute_block s p sbmain) Q"
+  unfolding sbmain_def
+  apply (intro wp_intro; auto split: if_splits)
+  using assms by simp
+    
 
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([],[

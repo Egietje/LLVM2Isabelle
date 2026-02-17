@@ -192,18 +192,21 @@ lemma wp_free_memory_intro[THEN consequence, wp_intro]:
 
 
 lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
-  "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None))"
+  "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None) \<and> single_memory_\<alpha> s a = None)"
   unfolding allocate_single_memory_def
-  by (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
+  apply (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
-  by (cases s; intro wp_intro wp_return_intro; auto)
+  apply (cases s; intro wp_intro wp_return_intro; auto)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
-  by (cases s; intro wp_intro wp_return_intro; auto)
+  apply (cases s; intro wp_intro wp_return_intro; auto)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 end
