@@ -1,6 +1,6 @@
 
 #let title-page(title:[], email:[], name:[], fill: yellow, body) = {
-  set page(margin: (top: 1.5in, rest: 2in))
+  set page(margin: (top: 3cm, rest: 4cm))
   set text(font: "Source Sans Pro", size: 14pt)
   set heading(numbering: "1.1.1")
   line(start: (0%, 0%), end: (8.5in, 0%), stroke: (thickness: 2pt))
@@ -32,29 +32,98 @@
 #set par(
   justify: true,
 )
-= Topic
 
-LLVM is an intermediate language for compilers that serves as a backend for compilation to many different CPU architectures.
-It abstracts from architecture-specific CPU instruction to provide a set of common instructions for which it is relatively easy to create a compiler for programming languages.
-From there, LLVM has compilers to many different architectures with specific optimizations.
-This means creating a compiler from your language to LLVM is all that is needed to be able to compile to most existing architectures, rather than having to create compilers for each architecture. 
-The aim of my thesis is to import LLVM snippets into Isabelle in order to create formal proofs for arbitrary programs written in languages that can be compiled to LLVM.
 
-= Related work
+= Introduction
 
-Much has been written about software verification.
-This section covers the basic principles defined by Hoare and Floyd (@sec-hoare-logic and @sec-floyd-method), extensions opens those bases (@sec-separation-logic and @sec-ver-con-gen), different ways of modeling memory in proofs (@sec-memory-models), and finally different existing program verifiers and their underlying principles (@sec-existing-verifiers).
+Say we have a C function for multiplying two integers:
+```C
+int mult(int a, int b) {
+    int result = 0;
+    for (int i = 0; i < b; i++) {
+        result += a;
+    }
+    return result;
+}
+```
+How would one verify that the returned value is indeed equal to a and b multiplied together?
 
-== Hoare Logic <sec-hoare-logic>
+
+== Software Verification
+
+One way to go about verifying this result is using a software verification tool made for the program's source language.
+Such tools are used to assert that specific conditions hold in the execution of a program.
+For the given example, a reasonable option would be to use Frama-C.@dedver-framac
+This is a mature platform that can be used to verify specifications written in ACSL (ANSI/ISO C Specification Language), for example:
+```C
+/*@
+requires a * b < 2^32;
+requires b >= 0;
+ensures \result == a * b;
+*/
+int mult(int a, int b);
+```
+
+This specification contains two pre-conditions and a post-condition.
+Specifically, the pre-condition states that the inputs multiplied together should not overflow and b should be non-negative, and the post-condition states that, if the pre-condition held, then the result of the function is equal to the two inputs multiplied together.
+
+However, these conditions are not enough to prove the correctness of the program.
+They only provide the goals for the correctness proof.
+In order actually prove that the post-condition follows from the pre-condition, the actual program and control-flow has to be taken into account.
+
+For Frama-C, this involves annotating parts of the implementation where the control-flow is non-linear.
+In our example, this is the while-loop, which has to be annotated by a loop-invariant.
+These are invariants that hold both at the start of the loop and after every single execution.
+We might define the following loop-invariant:
+```C
+int mult(int a, int b) {
+    int result = 0;
+    /*@
+    loop invariant 0 <= i <= b;
+    loop invariant result == a * i;
+    */
+    for (int i = 0; i < b; i++) {
+        result += a;
+    }
+    return result;
+}
+```
+
+With that, Frama-C is able to verify that the result will be equal to ```C a*b```.
+How this verification works under the hood is explained in @sec-ded-ver.
+However, what if we now want to use this function in a different programming language, for example in Rust or C`#`?
+This would involve finding a new verification framework and writing new specifications in its semantics.
+Is it there a way to use the same verification framework for many different languages?
+
+
+There are two different, but similar, formal systems for this exact purpose.
+These are Hoare logic, a deductive system based on axioms and inference rules@hoare-logic described in @sec-hoare-logic, and Floyd's method@floyd-method.
+
+- difficult to assess whether a program always does what it's supposed to
+- mostly based on Hoare Logic @sec-hoare-logic, sometimes @sec-floyd-method
+- many existing verification tools for different languages
+
+
+Note that there is a difference between the domain of the integers a and b in the code and the specification.
+In the code, these are 32-bit integers, which means they have limits and can overflow when they become too high, while in the specification they are mathematical integers without bounds.
+
+== Deductive Verification <sec-ded-ver>
+
+=== Hoare Logic <sec-hoare-logic>
 
 Hoare logic forms the basis of a lot of program verification.
+
+- pre-conditions define what is needed to execute successfully
+- post-conditions define the expected result of successful execution
+- "if P holds and we execute c, then Q holds afterwards"
+
 It defines methods of reasoning about programs through the connections between preconditions $P$, programs $Q$ (now commonly $c$), and results of execution (or postconditions) $R$ (now commonly $Q$).
 This means that as long as the intended execution of the program can be defined in terms of assertions about the values of variables at some point in execution, Hoare logic can be used to prove the partial correctness of such programs.
 However, the logic defined by Hoare cannot be used to proof termination of programs, and as such can only prove partial correctness.@hoare-logic
-As such, extensions and alternate methods have been defined, such as separation logic (see @sec-separation-logic) and verification condition generators (see @sec-ver-con-gen).
+As such, extensions and alternate methods have been defined, such as separation logic (see @sec-separation-logic) and verification condition generators.
 
 
-== Floyd’s Method <sec-floyd-method>
+=== Floyd's Method <sec-floyd-method>
 
 However, Hoare logic is not the only basis to be used for program verification.
 Another method was defined by Floyd independently from Hoare.
@@ -62,17 +131,35 @@ Rather than defining an algebra like Hoare, Floyd's method views programs as flo
 Verification conditions are defined as $V_c (P; Q)$ which assert that if $P$ holds and command $c$ is executed, then $Q$ will hold afterwards.@floyd-method
 
 
-== Separation Logic <sec-separation-logic>
+=== Separation Logic <sec-separation-logic>
 
 - @separation-logic
 - Extension with better reasoning for programs with pointers/dynamic memory allocation
-
-
-== Verification Condition Generators <sec-ver-con-gen>
-
-
-== Memory Models <sec-memory-models>
 - Axiomatic specification of memory operations @axiom-spec-memory-model
+
+=== Existing Verifiers
+
+Wow
+
+== LLVM
+
+- intermediate language for compilation
+- supports many source languages as it's relatively simple to compile to
+- many target architectures
+- built-in optimizations
+- example of LLVM program
+- "How would we prove that this program is correct?"
+
+
+== Isabelle
+
+- interactive theorem prover: allows user to specify theorems and prove them correct
+- provides user with goals to be proven and tools to prove those goals
+- allows user to create functions and datatypes
+- theorems can incorporate these functions and datatypes
+- example of Isabelle datatype, function, and proof
+
+
 
 
 == Existing imperative program verifiers <sec-existing-verifiers>
