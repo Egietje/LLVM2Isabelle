@@ -66,8 +66,8 @@ lemma wp_execute_intruction_block_intro[wp_intro]:
   by (simp; rule wp_intro; simp)
 
 lemma wp_execute_return_block_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s value = Some v"
-  shows "wp (execute_block s p ([], [], ret type value)) (\<lambda>(s', r). s' = s \<and> r = return_value v)"
+  assumes "\<exists>v. register_\<alpha> s value = Some v"
+  shows "wp (execute_block s p ([], [], ret type value)) (\<lambda>(s', r). s' = s \<and> (\<exists>v. register_\<alpha> s value = Some v \<and> r = return_value v))"
   using assms
   by (simp; intro wp_intro wp_return_intro; simp)
 

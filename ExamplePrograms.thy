@@ -73,6 +73,14 @@ lemma test:
   qed
   done
 
+lemma test2:
+  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
+  assumes "\<exists>a. register_\<alpha> s (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
+  shows "wp (execute_block s p sb10) Q"
+  unfolding sb10_def
+  using assms
+  apply (intro wp_intro; auto)
+  oops
 
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([],[
@@ -82,11 +90,27 @@ definition sb12 :: "llvm_instruction_block" where
     br_label ''14''
   )"
 
+lemma test3:
+  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
+  assumes "\<exists>a. register_\<alpha> s (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
+  shows "wp (execute_block s p sb12) Q"
+  unfolding sb12_def
+  using assms
+  apply (intro wp_intro; auto)
+  oops
+
 definition sb14 :: "llvm_instruction_block" where
   "sb14 = ([],[
     load ''15'' i32 (reg ''3'') (Some 4)],
     ret i32 (reg ''15'')
   )"
+
+lemma test3:
+  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
+  shows "wp (execute_block s p sb14) (\<lambda>(s', r). r = return_value v)"
+  unfolding sb14_def
+  using assms
+  by (intro wp_intro; auto)
 
 definition simple_branching_main :: "llvm_function" where
   "simple_branching_main = func (func_def ''main'' i32) sbmain [(''10'', sb10), (''12'', sb12), (''14'', sb14)]"
