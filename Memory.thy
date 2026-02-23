@@ -4,16 +4,15 @@ begin
 
 section "Simps"
 
-lemma register_\<alpha>_eq[simp]: "register_\<alpha> (vs,s,h) = register_\<alpha> (vs,s',h')"
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (r,s,h) = register_\<alpha> (r,s',h')"
   apply (rule ext)
   subgoal for x
-    by (cases vs; cases x; simp; metis)
+    by (cases r; cases x; simp; metis)
   done
 
 
 named_theorems single_memory_simps
 named_theorems single_memory_intro
-
 
 lemma single_memory_\<alpha>_set[single_memory_simps]:
   assumes "single_memory_\<alpha> s a \<noteq> None"
@@ -39,7 +38,6 @@ lemma memory_\<alpha>_set_stack[simp]:
   using assms single_memory_simps
   by (cases a'; fastforce)
   done
-
 
 lemma single_memory_\<alpha>_allocate[single_memory_simps]:
   assumes "a \<noteq> length m"
@@ -93,7 +91,6 @@ lemma memory_\<alpha>_free_stack[simp]:
     by (cases a'; simp add: single_memory_simps)
   done
 
-
 lemma single_memory_\<alpha>_not_none_iff[single_memory_simps]:
   "valid_single_memory_address s a \<longleftrightarrow> single_memory_\<alpha> s a \<noteq> None"
   unfolding single_memory_\<alpha>_def valid_single_memory_address_def
@@ -102,7 +99,6 @@ lemma single_memory_\<alpha>_not_none_iff[single_memory_simps]:
 lemma memory_\<alpha>_not_none_iff[simp]:
   "valid_memory_address s a \<longleftrightarrow> memory_\<alpha> s a \<noteq> None"
   by (cases s; cases a; simp add: single_memory_simps)
-
 
 lemma memory_\<alpha>_allocate_validity[simp]:
   assumes "memory_\<alpha> m' = (memory_\<alpha> m)(a := Some None)"
@@ -124,6 +120,34 @@ lemma memory_\<alpha>_free_validity[simp]:
   shows "valid_memory_address m a' = valid_memory_address m' a' \<and> \<not>valid_memory_address m' a"
   using assms
   by simp
+
+
+
+section "memory_\<alpha> operations"
+
+lemma set_memory_\<alpha>:
+  assumes "memory_\<alpha> s a \<noteq> None"
+  shows "\<exists>s'. set_memory a v s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v))"
+  using assms
+  by (cases s; cases a; auto simp: single_memory_\<alpha>_def set_single_memory_def split: if_splits)
+
+lemma allocate_stack_\<alpha>:
+  assumes "allocate_stack s = (s', a)"
+  shows "memory_\<alpha> s' = (memory_\<alpha> s)(a := Some None)"
+  using assms
+  by (cases s; cases s'; cases a; auto simp: allocate_stack_def allocate_single_memory_def)
+
+lemma allocate_heap_\<alpha>:
+  assumes "allocate_heap s = (s', a)"
+  shows "memory_\<alpha> s' = (memory_\<alpha> s)(a := Some None)"
+  using assms
+  by (cases s; cases s'; cases a; auto simp: allocate_heap_def allocate_single_memory_def)
+
+lemma free_memory_\<alpha>:
+  assumes "memory_\<alpha> s a \<noteq> None"
+  shows "\<exists>s'. free_memory a s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := None)"
+  using assms
+  by (cases s; cases a; auto simp: free_single_memory_def single_memory_\<alpha>_def split: if_splits)
 
 
 
@@ -156,14 +180,14 @@ lemma wp_get_memory_intro[THEN consequence, wp_intro]:
 
 lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
   assumes "single_memory_\<alpha> m a \<noteq> None"
-  shows "wp (set_single_memory m a v) (\<lambda>m'. single_memory_\<alpha> m' = (single_memory_\<alpha> m)(a := Some (Some v)))"
+  shows "wp (set_single_memory a v m) (\<lambda>m'. single_memory_\<alpha> m' = (single_memory_\<alpha> m)(a := Some (Some v)))"
   using assms
   unfolding set_single_memory_def
   by (intro wp_intro wp_return_intro; simp add: single_memory_simps)
                                                                                
 lemma wp_set_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (set_memory s a v) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
+  shows "wp (set_memory a v s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms 
   apply (cases a; cases s; simp)
   unfolding set_single_memory_def
@@ -172,7 +196,7 @@ lemma wp_set_memory_intro[THEN consequence, wp_intro]:
 
 lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
   assumes "single_memory_\<alpha> s a \<noteq> None"
-  shows "wp (free_single_memory s a) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := None))"
+  shows "wp (free_single_memory a s) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := None))"
   using assms
   unfolding free_single_memory_def
   apply (intro wp_intro wp_return_intro)
@@ -181,7 +205,7 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
 
 lemma wp_free_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "wp (free_memory s a) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
+  shows "wp (free_memory a s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms
   apply (cases a; cases s; simp)
   apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)

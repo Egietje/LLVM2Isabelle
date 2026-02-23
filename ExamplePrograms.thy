@@ -4,15 +4,6 @@ begin
 
 section "Simple Branching"
 
-lemma reg_inj [simp]: "reg x = reg y \<longleftrightarrow> x = y"
-  by simp
-lemma saddr_inj [simp]: "saddr x = saddr y \<longleftrightarrow> x = y"
-  by simp
-lemma haddr_inj [simp]: "haddr x = haddr y \<longleftrightarrow> x = y"
-  by simp
-lemma addr_inj [simp]: "addr x = addr y \<longleftrightarrow> x = y"
-  by simp
-
 definition sbmain :: "llvm_instruction_block" where
   "sbmain = ([],[
     alloca ''1'' i32 (Some 4),
@@ -46,7 +37,7 @@ lemma test:
        (reg ''1'' \<mapsto> addr a1, reg ''2'' \<mapsto> addr a2, reg ''3'' \<mapsto> addr a3, reg ''4'' \<mapsto> addr a4,
           reg ''5'' \<mapsto> addr a5, reg ''6'' \<mapsto> vi32 1, reg ''7'' \<mapsto> vi32 2, reg ''8'' \<mapsto> vi32 2,
           reg ''9'' \<mapsto> vi1 True) \<Longrightarrow> Q (s', branch_label ''10'')"
-  shows "wp (execute_block s p sbmain) Q"
+  shows "wp (execute_block p sbmain s) Q"
   unfolding sbmain_def
   apply (intro wp_intro; auto split: if_splits)
   subgoal premises prems for _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ r' s' h' a4 a5 a1 a2 a3 _
@@ -76,7 +67,7 @@ lemma test:
 lemma test2:
   assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
   assumes "\<exists>a. register_\<alpha> s (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_block s p sb10) Q"
+  shows "wp (execute_block p sb10 s) Q"
   unfolding sb10_def
   using assms
   apply (intro wp_intro; auto)
@@ -93,7 +84,7 @@ definition sb12 :: "llvm_instruction_block" where
 lemma test3:
   assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
   assumes "\<exists>a. register_\<alpha> s (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_block s p sb12) Q"
+  shows "wp (execute_block p sb12 s) Q"
   unfolding sb12_def
   using assms
   apply (intro wp_intro; auto)
@@ -107,7 +98,7 @@ definition sb14 :: "llvm_instruction_block" where
 
 lemma test3:
   assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_block s p sb14) (\<lambda>(s', r). r = return_value v)"
+  shows "wp (execute_block p sb14 s) (\<lambda>(s', r). r = return_value v)"
   unfolding sb14_def
   using assms
   by (intro wp_intro; auto)
@@ -150,7 +141,7 @@ define dso_local i32 @main() #0 {
 }
 *)
 
-value "execute_function empty_state simple_branching_main"
+value "execute_function simple_branching_main empty_state"
 
 
 section "Phi Node"
@@ -223,6 +214,6 @@ define dso_local i32 @main() #0 {
 }
 *)
 
-value "execute_function empty_state phi_main"
+value "execute_function phi_main empty_state"
 
 end
