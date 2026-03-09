@@ -44,12 +44,23 @@ lemma hoare_consequence:
   by blast
 
 
+lemma vcg_cons:
+  assumes assm: "hoare P c Q"
+  assumes state: "state_marker P' s"
+  assumes pre:  "P' s \<Longrightarrow> P s"
+  assumes post: "\<And>s. state_marker Q s \<Longrightarrow> Q' s"
+  shows "wp (c s) Q'"
+  using assms consequence
+  unfolding hoare_def state_marker_def
+  by blast
+
+
 
 section "Instructions specifications"
 
 named_theorems hoare_specs
 
-lemma alloca_spec[hoare_specs]:
+lemma alloca_spec:
   "hoare
     (\<lambda>s'. s' = s)
     (execute_alloca n)
@@ -57,6 +68,17 @@ lemma alloca_spec[hoare_specs]:
   apply (rule hoare_intro)
   apply (rule alloca_wp_intro)
   by (auto simp: state_marker_def)
+
+
+lemma alloca_spec':
+  assumes "\<And>s s'. state_marker (\<lambda>s'. \<exists>a. P s \<and> (register_\<alpha> s') = (register_\<alpha> s)(reg n := Some (addr a)) \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None) s' \<Longrightarrow> wp (c s') Q"
+  shows "hoare P (execute_alloca n) (\<lambda>s'. wp (c s') Q)"
+  apply (rule hoare_intro)
+  apply (rule wp_intro)
+  using assms
+  unfolding state_marker_def
+  by simp
+
 
 lemma store_spec[hoare_specs]:
   "hoare
@@ -152,24 +174,20 @@ lemma block_phi_spec':
   by blast
 
 lemma block_phi_spec[hoare_specs]:
-  assumes "hoare P (execute_phi p name values) x"
-  assumes "hoare x (execute_block p (ps, is, t)) Q"
+  assumes "hoare P (execute_phi p name values) (\<lambda>s'. hoare (\<lambda>s. s = s') (execute_block p (ps, is, t)) Q)"
   shows "hoare P (execute_block p ((phi name type values)#ps, is, t)) Q"
   apply (rule hoare_intro)
   apply (rule wp_intro)
   using assms
-  apply (auto simp: state_marker_def hoare_def consequence)
-  by (smt (verit, best) assms(2) consequence hoare_def)
+  by (auto simp: state_marker_def hoare_def)
 
 lemma block_instr_spec[hoare_specs]:
-  assumes "hoare P (execute_instruction i) x"
-  assumes "hoare x (execute_block p ([], is, t)) Q"
+  assumes "hoare P (execute_instruction i) (\<lambda>s'. hoare (\<lambda>s. s = s') (execute_block p ([], is, t)) Q)"
   shows "hoare P (execute_block p ([], i#is, t)) Q"
   apply (rule hoare_intro)
   apply (intro wp_intro)
   using assms
-  apply (auto simp: state_marker_def hoare_def consequence)
-  by (smt (verit, best) assms(2) consequence hoare_def)
+  by (auto simp: state_marker_def hoare_def)
 
 lemma block_ret_spec[hoare_specs]:
   "hoare

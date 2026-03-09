@@ -1,5 +1,5 @@
 theory ExamplePrograms
-  imports "Blocks" "HOL-Library.AList_Mapping"
+  imports "Blocks" "HOL-Library.AList_Mapping" "Hoare"
 begin
 
 section "Simple Branching"
@@ -29,50 +29,6 @@ definition sb10 :: "llvm_instruction_block" where
     br_label ''14''
   )"
 
-lemma test:
-  assumes "\<And>s' a1 a2 a3 a4 a5. memory_\<alpha> s' =
-       (memory_\<alpha> s)(a4 \<mapsto> None, a5 \<mapsto> None, a1 \<mapsto> Some (vi32 0), a2 \<mapsto> Some (vi32 1), a3 \<mapsto> Some (vi32 2)) \<Longrightarrow>
-       register_\<alpha> s' =
-       (register_\<alpha> s)
-       (reg ''1'' \<mapsto> addr a1, reg ''2'' \<mapsto> addr a2, reg ''3'' \<mapsto> addr a3, reg ''4'' \<mapsto> addr a4,
-          reg ''5'' \<mapsto> addr a5, reg ''6'' \<mapsto> vi32 1, reg ''7'' \<mapsto> vi32 2, reg ''8'' \<mapsto> vi32 2,
-          reg ''9'' \<mapsto> vi1 True) \<Longrightarrow> Q (s', branch_label ''10'')"
-  shows "wp (execute_block p sbmain s) Q"
-  unfolding sbmain_def
-  apply (intro wp_intro; auto split: if_splits)
-  subgoal premises prems for _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ r' s' h' a4 a5 a1 a2 a3 _
-  proof -
-    have reg_s': "register_\<alpha> (r',s',h') = (register_\<alpha> s)(
-                    reg ''1'' \<mapsto> addr a1,
-                    reg ''2'' \<mapsto> addr a2,
-                    reg ''3'' \<mapsto> addr a3,
-                    reg ''4'' \<mapsto> addr a4,
-                    reg ''5'' \<mapsto> addr a5,
-                    reg ''6'' \<mapsto> vi32 1,
-                    reg ''7'' \<mapsto> vi32 2,
-                    reg ''8'' \<mapsto> vi32 2,
-                    reg ''9'' \<mapsto> vi1 True)"
-      using prems by simp
-    have mem_s': "memory_\<alpha> (r',s',h') = (memory_\<alpha> s)(
-                    a4 \<mapsto> None,
-                    a5 \<mapsto> None,
-                    a1 \<mapsto> Some (vi32 0),
-                    a2 \<mapsto> Some (vi32 1),
-                    a3 \<mapsto> Some (vi32 2))"
-      using prems by simp
-    then show ?thesis using assms mem_s' reg_s' by blast
-  qed
-  done
-
-lemma test2:
-  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  assumes "\<exists>a. register_\<alpha> s (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_block p sb10 s) Q"
-  unfolding sb10_def
-  using assms
-  apply (intro wp_intro; auto)
-  oops
-
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([],[
     store i32 (val (vi32 4)) (reg ''5'') (Some 4),
@@ -81,65 +37,99 @@ definition sb12 :: "llvm_instruction_block" where
     br_label ''14''
   )"
 
-lemma test3:
-  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  assumes "\<exists>a. register_\<alpha> s (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  shows "wp (execute_block p sb12 s) Q"
-  unfolding sb12_def
-  using assms
-  apply (intro wp_intro; auto)
-  oops
-
 definition sb14 :: "llvm_instruction_block" where
   "sb14 = ([],[
     load ''15'' i32 (reg ''3'') (Some 4)],
     ret i32 (reg ''15'')
   )"
 
-lemma test3:
-  assumes "\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_block p sb14 s) (\<lambda>(s', r). r = return_value v)"
-  unfolding sb14_def
-  using assms
-  by (intro wp_intro; auto)
-
 definition simple_branching_main :: "llvm_function" where
   "simple_branching_main = func (func_def ''main'' i32) sbmain [(''10'', sb10), (''12'', sb12), (''14'', sb14)]"
 
-(*
-int main() {
-    int y = 1;
-    int x = y?1:0;
-    return x;
-}
-*)
-(*
-define dso_local i32 @main() #0 {
-  %1 = alloca i32, align 4
-  %2 = alloca i32, align 4
-  %3 = alloca i32, align 4
-  %4 = alloca i32, align 4
-  store i32 0, ptr %1, align 4
-  store i32 1, ptr %2, align 4
-  %5 = load i32, ptr %2, align 4
-  %6 = icmp ne i32 %5, 0
-  br i1 %6, label %7, label %9
 
-7:
-  store i32 1, ptr %4, align 4
-  %8 = load i32, ptr %4, align 4
-  br label %10
+lemma alloc_fresh_simp: "(if a=b then Some x else y) = None \<longleftrightarrow> a\<noteq>b \<and> y = None"
+  by (auto split: if_split)
 
-9:
-  br label %10
+method repeat_minus_one methods m =
+  ((m; succeeds m; repeat_minus_one m) | succeed)
 
-10:
-  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
-  store i32 %11, ptr %3, align 4
-  %12 = load i32, ptr %3, align 4
-  ret i32 %12
-}
-*)
+method thin_tac_reg = thin_tac "register_\<alpha> _ = _"
+method clean_registers = repeat_minus_one thin_tac_reg
+
+method thin_tac_mem = thin_tac "memory_\<alpha> _ = _"
+method clean_memory = repeat_minus_one thin_tac_mem
+
+method hoare_init = rule hoare_intro
+method wp_instr = intro wp_intro, auto simp: alloc_fresh_simp state_marker_def, clean_registers, clean_memory
+
+lemma hoare_sbmain:
+  "hoare
+
+    (\<lambda>_. True)
+
+    (execute_block p sbmain)
+
+    (\<lambda>(s', r).
+      r = branch_label ''10''
+    \<and> (\<exists>a. register_\<alpha> s' (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s' a \<noteq> None)
+    \<and> (\<exists>a. register_\<alpha> s' (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s' a \<noteq> None)
+    \<and> (\<exists>a. register_\<alpha> s' (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s' a \<noteq> None)
+    )"
+  unfolding sbmain_def
+  apply hoare_init
+  apply wp_instr
+  done
+
+lemma hoare_sb10:
+  "hoare
+
+    (\<lambda>s.
+      (\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+    \<and> (\<exists>a. register_\<alpha> s (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+    )
+
+    (execute_block p sb10)
+
+    (\<lambda>(s', r).
+      (\<exists>a. register_\<alpha> s' (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s' a = Some (Some (vi32 3)))
+      \<and> r = branch_label ''14''
+    )"
+  unfolding sb10_def
+  apply hoare_init
+  apply wp_instr
+  done
+
+lemma hoare_sb12:
+  "hoare
+
+    (\<lambda>s.
+      (\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+    \<and> (\<exists>a. register_\<alpha> s (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+    )
+
+    (execute_block p sb12)
+
+    (\<lambda>(s', r).
+      (\<exists>a. register_\<alpha> s' (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s' a = Some (Some (vi32 4)))
+    \<and> r = branch_label ''14''
+    )"
+  unfolding sb12_def
+  apply hoare_init
+  apply wp_instr
+  done
+
+lemma hoare_sb14:
+  "hoare
+
+    (\<lambda>s. \<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v))
+
+    (execute_block p sb14)
+
+    (\<lambda>(s', r). r = return_value v)"
+  unfolding sb14_def
+  apply hoare_init
+  apply wp_instr
+  done
 
 value "execute_function simple_branching_main empty_state"
 
