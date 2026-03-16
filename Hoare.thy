@@ -12,10 +12,10 @@ definition state_marker :: "('a \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarr
 
 
 lemma hoare_intro:
-  assumes "\<And>s. state_marker P s \<Longrightarrow> wp (c s) Q"
+  assumes "\<And>s. P s \<Longrightarrow> wp (c s) Q"
   shows "hoare P c Q"
   using assms
-  unfolding hoare_def state_marker_def
+  unfolding hoare_def
   by simp
 
 lemma hoare_elim:

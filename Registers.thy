@@ -20,6 +20,10 @@ lemma register_\<alpha>_val_eq[simp]:
   "register_\<alpha> s (val v) = Some v"
   by (cases s; simp)
 
+lemma register_\<alpha>_update_independent[simp]:
+  "(register_\<alpha> s)(x := v) = register_\<alpha> s' \<Longrightarrow> x \<noteq> y \<Longrightarrow> register_\<alpha> s y = register_\<alpha> s' y"
+  by (metis fun_upd_other)
+
 
 
 section "register_\<alpha> operation"

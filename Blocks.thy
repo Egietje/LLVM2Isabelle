@@ -20,13 +20,12 @@ definition execute_phi :: "llvm_label option \<Rightarrow> llvm_register_name \<
 
 lemma phi_wp_intro[THEN consequence, wp_intro]:
   assumes "distinct (map fst values)"
-  assumes "\<exists>p' v v'. p = Some p' \<and> map_of values p' = Some v \<and> register_\<alpha> s v = Some v'"
-  shows "wp (execute_phi p name values s) (\<lambda>s'. \<exists>p' v v'. p = Some p' \<and> map_of values p' = Some v \<and> register_\<alpha> s v = Some v' \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s)"
+  assumes "p = Some p'" "map_of values p' = Some v" "register_\<alpha> s v = Some v'"
+  shows "wp (execute_phi p name values s) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s)"
   unfolding execute_phi_def
   apply simp
   using assms
-  apply (intro wp_intro; auto)
-  by (metis eq_key_imp_eq_value)
+  apply (intro wp_intro; auto) done
 
 
 
@@ -65,8 +64,8 @@ lemma block_instr_wp_intro[wp_intro]:
   by (simp; rule wp_intro; simp)
 
 lemma block_ret_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>v. register_\<alpha> s value = Some v"
-  shows "wp (execute_block p ([], [], ret type value) s) (\<lambda>(s', r). s' = s \<and> (\<exists>v. register_\<alpha> s value = Some v \<and> r = return_value v))"
+  assumes "register_\<alpha> s value = Some v"
+  shows "wp (execute_block p ([], [], ret type value) s) (\<lambda>(s', r). s' = s \<and> r = return_value v)"
   using assms
   by (simp; intro wp_intro wp_return_intro; simp)
 
@@ -75,10 +74,10 @@ lemma block_br_label_wp_intro[THEN consequence, wp_intro]:
   by (simp; rule wp_return_intro; simp)
 
 lemma block_br_i1_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>b. register_\<alpha> s value = Some (vi1 b)"
-  shows "wp (execute_block p ([], [], br_i1 value l1 l2) s) (\<lambda>(s', r). s' = s \<and> (\<exists>b. register_\<alpha> s value = Some (vi1 b) \<and> r = branch_label (if b then l1 else l2)))"
+  assumes "register_\<alpha> s value = Some (vi1 b)"
+  shows "wp (execute_block p ([], [], br_i1 value l1 l2) s) (\<lambda>(s', r). s' = s \<and> r = branch_label (if b then l1 else l2))"
   using assms
-  by (simp; intro wp_intro; auto; intro wp_intro wp_return_intro; auto)
+  by (auto; intro wp_intro; auto; intro wp_intro wp_return_intro; auto)
 
 
 section "Multiple blocks"

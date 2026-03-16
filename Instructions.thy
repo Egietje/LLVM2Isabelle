@@ -27,6 +27,15 @@ lemma alloca_wp_intro[THEN consequence, wp_intro]:
   unfolding execute_alloca_def
   by (intro wp_intro; auto)
 
+thm alloca_wp_intro
+
+lemma cons_ex:
+  assumes "wp c (\<lambda>s. \<exists>x. P x s)"
+  assumes "\<And>s x. P x s \<Longrightarrow> Q s"
+  shows "wp c Q"
+  oops
+  
+
 
 fun get_address_from_pointer :: "state \<Rightarrow> llvm_pointer \<Rightarrow> llvm_address result" where
   "get_address_from_pointer s p = do {
@@ -42,9 +51,9 @@ definition execute_store :: "llvm_value_ref \<Rightarrow> llvm_pointer \<Rightar
   }"
 
 lemma store_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>a. register_\<alpha> s pointer = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
-  assumes "register_\<alpha> s value \<noteq> None"
-  shows "wp (execute_store value pointer s) (\<lambda>s'. \<exists>a v. register_\<alpha> s pointer = Some (addr a) \<and> register_\<alpha> s value = Some v \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
+  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a \<noteq> None"
+  assumes "register_\<alpha> s value = Some v"
+  shows "wp (execute_store value pointer s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s' = register_\<alpha> s)"
   unfolding execute_store_def
   using assms
   apply simp
@@ -59,8 +68,8 @@ definition execute_load :: "llvm_register_name \<Rightarrow> llvm_pointer \<Righ
   }"
 
 lemma load_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>a v. register_\<alpha> s pointer = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
-  shows "wp (execute_load name pointer s) (\<lambda>s'. \<exists>a v. register_\<alpha> s pointer = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v) \<and> memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v))"
+  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a = Some (Some v)"
+  shows "wp (execute_load name pointer s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v))"
   unfolding execute_load_def
   using assms
   apply simp
@@ -130,15 +139,15 @@ definition execute_add :: "llvm_register_name \<Rightarrow> llvm_add_wrap \<Righ
 
 
 lemma add32_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>v1' v2'. register_\<alpha> s v1 = Some (vi32 v1') \<and> register_\<alpha> s v2 = Some (vi32 v2') \<and> add_no_poison32 wrap v1' v2'"
-  shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. \<exists>v1' v2'. register_\<alpha> s v1 = Some (vi32 v1') \<and> register_\<alpha> s v2 = Some (vi32 v2') \<and> memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi32 (v1' + v2'))))"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "add_no_poison32 wrap v1' v2'"
+  shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi32 (v1' + v2'))))"
   using assms
   unfolding execute_add_def
   by (intro wp_intro; simp; auto; intro wp_intro; simp)
 
 lemma add64_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>v1' v2'. register_\<alpha> s v1 = Some (vi64 v1') \<and> register_\<alpha> s v2 = Some (vi64 v2') \<and> add_no_poison64 wrap v1' v2'"
-  shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. \<exists>v1' v2'. register_\<alpha> s v1 = Some (vi64 v1') \<and> register_\<alpha> s v2 = Some (vi64 v2') \<and> memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi64 (v1' + v2'))))"
+  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "add_no_poison64 wrap v1' v2'"
+  shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi64 (v1' + v2'))))"
   using assms
   unfolding execute_add_def
   by (intro wp_intro; simp; auto; intro wp_intro; simp)
@@ -195,15 +204,15 @@ definition execute_icmp :: "llvm_register_name \<Rightarrow> llvm_same_sign \<Ri
   }"
 
 lemma icmp32_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>v1' v2'. register_\<alpha> s v1 = Some (vi32 v1') \<and> register_\<alpha> s v2 = Some (vi32 v2') \<and> (if ss then same_signs (sint v1') (sint v2') else True)"
-  shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. \<exists>v1' v2'. register_\<alpha> s v1 = Some (vi32 v1') \<and> register_\<alpha> s v2 = Some (vi32 v2') \<and> memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_32 cond v1' v2')))"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs (sint v1') (sint v2') else True)"
+  shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_32 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def
   by (cases ss; intro wp_intro; auto; intro wp_intro; auto)
 
 lemma icmp64_wp_intro[THEN consequence, wp_intro]:
-  assumes "\<exists>v1' v2'. register_\<alpha> s v1 = Some (vi64 v1') \<and> register_\<alpha> s v2 = Some (vi64 v2') \<and> (if ss then same_signs (sint v1') (sint v2') else True)"
-  shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. \<exists>v1' v2'. register_\<alpha> s v1 = Some (vi64 v1') \<and> register_\<alpha> s v2 = Some (vi64 v2') \<and> memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_64 cond v1' v2')))"
+  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "(if ss then same_signs (sint v1') (sint v2') else True)"
+  shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_64 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def
   by (cases ss; intro wp_intro; auto; intro wp_intro; auto)

@@ -60,7 +60,56 @@ method thin_tac_mem = thin_tac "memory_\<alpha> _ = _"
 method clean_memory = repeat_minus_one thin_tac_mem
 
 method hoare_init = rule hoare_intro
-method wp_instr = intro wp_intro, auto simp: alloc_fresh_simp state_marker_def, clean_registers, clean_memory
+
+lemma contract_updates:
+  assumes "f s'' = (f s)(r1 := v1, r2 := v2) \<Longrightarrow> P"
+  shows "f s' = (f s)(r1 := v1) \<Longrightarrow> f s'' = (f s')(r2 := v2) \<Longrightarrow> P"
+  using assms
+  by simp
+
+lemma False_eq_False:
+  assumes "False"
+  shows "False"
+  by (rule assms)
+
+
+method clean_assms = ((elim exE conjE)+)?, (simp only: contract_updates)?; clean_registers?; clean_memory?; (simp only: triv_forall_equality)?
+
+method strat_instr methods m = rule wp_intro, m, clean_assms; (simp only: False_eq_False)?
+
+method instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (addr _)"]; simp
+method memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"]; simp
+method register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"]; simp
+method memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"]; simp split: if_splits
+method add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]); eval
+method icmp_same_signs = rule asm_rl[of "if _ then same_signs _ _ else True"]; eval
+method map_of_some = rule asm_rl[of "map_of _ _ = Some _"]; simp
+method distinct_first = rule asm_rl[of "distinct (map fst _)"]; eval
+method some_refl = rule asm_rl[of "Some _ = Some _"]; rule refl
+
+method three_simps = simp, simp, simp
+
+method strat_alloca = rule asm_rl[of "wp (execute_alloca _ _) _"], strat_instr -
+method strat_store  = rule asm_rl[of "wp (execute_store _ _ _) _"], strat_instr \<open>instantiate_register_address, memory_allocated, register_value\<close>
+method strat_load   = rule asm_rl[of "wp (execute_load _ _ _) _"], strat_instr \<open>instantiate_register_address, memory_value\<close>
+method strat_add    = rule asm_rl[of "wp (execute_add _ _ _ _ _) _"], strat_instr \<open>register_value, register_value, add_poison\<close>
+method strat_icmp   = rule asm_rl[of "wp (execute_icmp _ _ _ _ _ _) _"], strat_instr \<open>register_value, register_value, icmp_same_signs\<close>; simp only: compare_values_32.simps compare_values_64.simps
+
+method strat_branch_i1 = rule asm_rl[of "wp (execute_block _ ([], [], br_i1 _ _ _) _ ) _"], (rule wp_intro, register_value); (simp only: False_eq_False)?
+method strat_branch_label = rule asm_rl[of "wp (execute_block _ ([], [], br_label _) _ ) _"], rule wp_intro; (simp only: False_eq_False)?
+method strat_return = rule asm_rl[of "wp (execute_block _ ([], [], ret _ _) _ ) _"], (rule wp_intro, register_value); (simp only: False_eq_False)?
+
+method unfold_execute_block_phi = rule asm_rl[of "wp (execute_block _ (_#_, _, _) _) _"], rule wp_intro
+method strat_phi = rule asm_rl[of "wp (execute_phi _ _ _ _) _"], strat_instr \<open>distinct_first, some_refl, map_of_some, register_value\<close>
+
+method unfold_execute_block_instr = rule asm_rl[of "wp (execute_block _ ([], _#_, _) _) _"], rule wp_intro
+method unfold_execute_instr = rule asm_rl[of "wp (execute_instruction _ _) _"], rule wp_intro
+
+method phi_vcg = (unfold_execute_block_phi | strat_phi)+
+method instr_vcg = (unfold_execute_block_instr | unfold_execute_instr | strat_alloca | strat_store | strat_load | strat_add | strat_icmp)+
+method term_vcg = strat_branch_i1 | strat_branch_label | strat_return
+
+method vcg = hoare_init, phi_vcg?, instr_vcg?, term_vcg?
 
 lemma hoare_sbmain:
   "hoare
@@ -76,60 +125,56 @@ lemma hoare_sbmain:
     \<and> (\<exists>a. register_\<alpha> s' (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s' a \<noteq> None)
     )"
   unfolding sbmain_def
-  apply hoare_init
-  apply wp_instr
-  done
+  apply vcg
+  by auto
 
 lemma hoare_sb10:
   "hoare
 
     (\<lambda>s.
-      (\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
-    \<and> (\<exists>a. register_\<alpha> s (reg ''4'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+      register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None
+    \<and> register_\<alpha> s (reg ''4'') = Some (addr a4) \<and> memory_\<alpha> s a4 \<noteq> None
     )
 
     (execute_block p sb10)
 
     (\<lambda>(s', r).
-      (\<exists>a. register_\<alpha> s' (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s' a = Some (Some (vi32 3)))
-      \<and> r = branch_label ''14''
+      register_\<alpha> s' (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s' a3 = Some (Some (vi32 3))
+    \<and> r = branch_label ''14''
     )"
   unfolding sb10_def
-  apply hoare_init
-  apply wp_instr
-  done
+  apply vcg
+  by auto
 
 lemma hoare_sb12:
   "hoare
 
     (\<lambda>s.
-      (\<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
-    \<and> (\<exists>a. register_\<alpha> s (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None)
+      (register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None)
+    \<and> (register_\<alpha> s (reg ''5'') = Some (addr a5) \<and> memory_\<alpha> s a5 \<noteq> None)
     )
 
     (execute_block p sb12)
 
     (\<lambda>(s', r).
-      (\<exists>a. register_\<alpha> s' (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s' a = Some (Some (vi32 4)))
+      (register_\<alpha> s' (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s' a3 = Some (Some (vi32 4)))
     \<and> r = branch_label ''14''
     )"
   unfolding sb12_def
-  apply hoare_init
-  apply wp_instr
-  done
+  apply vcg
+  by auto
 
 lemma hoare_sb14:
   "hoare
 
-    (\<lambda>s. \<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v))
+    (\<lambda>s. register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 = Some (Some v))
 
     (execute_block p sb14)
 
     (\<lambda>(s', r). r = return_value v)"
   unfolding sb14_def
-  apply hoare_init
-  apply wp_instr
-  done
+  apply vcg
+  by auto
 
 value "execute_function simple_branching_main empty_state"
 
@@ -170,6 +215,69 @@ definition p10 :: "llvm_instruction_block" where
 
 definition phi_main :: "llvm_function" where
   "phi_main = func (func_def ''main'' i32) pmain [(''7'', p7), (''9'', p9), (''10'', p10)]"
+
+
+lemma hoare_pmain:
+  "hoare
+
+  (\<lambda>_. True)
+
+  (execute_block p pmain)
+
+  (\<lambda>(s', r). Q)"
+  unfolding pmain_def
+  apply vcg
+  oops
+
+lemma hoare_p7:
+  "hoare
+
+  (\<lambda>s. (register_\<alpha> s (reg ''4'') = Some (addr a4) \<and> memory_\<alpha> s a4 \<noteq> None))
+
+  (execute_block p p7)
+
+  (\<lambda>(s', r). r = branch_label ''10'' \<and> (\<exists>a. register_\<alpha> s' (reg ''8'') = Some (vi32 1)))"
+  unfolding p7_def
+  apply vcg
+  by auto
+
+lemma hoare_p9:
+  "hoare
+
+  (\<lambda>s. True)
+
+  (execute_block p p9)
+
+  (\<lambda>(s', r). r = branch_label ''10'')"
+  unfolding p9_def
+  apply vcg
+  by auto
+
+lemma hoare_p10_7:
+  "hoare
+
+  (\<lambda>s. register_\<alpha> s (reg ''8'') = Some v \<and> register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None)
+
+  (execute_block (Some ''7'') p10)
+
+  (\<lambda>(s', r). r = return_value v)"
+  unfolding p10_def
+  apply vcg
+  by auto
+
+lemma hoare_p10_9:
+  "hoare
+
+  (\<lambda>s. register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None)
+
+  (execute_block (Some ''9'') p10)
+
+  (\<lambda>(s', r). r = return_value (vi32 0))"
+  unfolding p10_def
+  apply vcg
+  by auto
+
+
 (*
 int main() {
     int y = 1;
