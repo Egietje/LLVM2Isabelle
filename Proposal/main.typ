@@ -20,9 +20,22 @@
   pagebreak()
   body
 }
+#let code(body, title) = figure(
+  body,
+  caption: title,
+)
+
+
+#import "@preview/codly:1.3.0": *
+#import "@preview/codly-languages:0.1.1": *
+#show: codly-init.with()
+
+#codly(languages: codly-languages)
+
+
 
 #show: body => title-page(
-  title: "LLVM verification in Isabelle",
+  title: "Deductive LLVM verification in Isabelle",
   email: "mailto:t.s.kas@student.utwente.nl",
   name: "Thomas Kas",
   body
@@ -35,6 +48,328 @@
 
 
 = Introduction
+
+As software is used in more and more safety-critical areas, the importance of its verification grows rapidly.
+It is used in modes of transportation like cars and planes, critical infrastructure like traffic lights and power plants, and many other areas.
+If the software controlling these things fails, the consequences are great.
+As such, verifying such pieces of software work as intended is crucial.
+
+This verification can be done through various different methods.
+One such method is model checking, where a model of the system the software acts upon is created and used to verify the software functions correctly in some or all possible states of the model.
+Another method is dynamic analysis, where (a part of) the software is run and its results are checked against the expected outcome, commonly implemented in unit or acceptance tests.
+In contrast to dynamic analysis, static analysis can identify possible issues without running the software, usually consisting of common programming mistakes but limited in its scope, as it usually does not verify the implementation matches the expected behavior.
+Finally, there is deductive verification, which mathematically verifies correctness using logical reasoning based on pre- and post-conditions.
+It is using this method that a new verification tool will be created in this thesis.
+
+Verification can be done at various stages in compilation of software.
+It might be done with the source code, which has the most meaning to developers as this is what they directly interact with and can alter easily, with fully compiled binaries, which says the most about the actual execution as compilation might introduce artifacts not present in the source code, or with some intermediary between these stages.
+
+Performing verification on source code comes with the advantage that it is relatively easy to integrate the verification into the program, for example with in-line verification instructions, but this comes at the cost of the verification being tied to the specific programming language the software was written in.
+Switching (part of) the software to a different programming language, for example when modernizing legacy code, means that either the verification tool used has to also support that new language, or a different verification tool has to be used and all existing verification has to be redone.
+
+Targeting a lower level like machine instructions gets around this issue, but means that only a single target is verified, tying the verification to a specific architecture.
+If the target architecture stays the same, it is possible to use the same verification regardless of the source language.
+However, switching the target architecture means that a different verification tool has to be found and verification has to be redone once more.
+
+This thesis aims to create a tool for deductive verification at a level between these two, namely LLVM-IR.
+This is the intermediate representation of LLVM, a compilation framework that has separate front-ends and back-ends for different source languages and target architectures.
+It allows language-engineers to have a single compilation target, LLVM-IR, to automatically support many different target architectures, including x86, ARM, and RISC-V.
+Furthermore, it allows developers working on new hardware targets to implement a single backend for LLVM-IR, automatically enabling support for all languages that compile to it.
+What this means for the tool is that, once functional, it automatically supports software written in many source languages for many target architectures.
+
+Finally, the chosen verification tool for this thesis is Isabelle/HOL.
+Isabelle/HOL is an interactive theorem prover that allows users to specify theorems using higher-order logic and mathematically prove them to be correct.
+Whenever a new theorem is created, Isabelle gives the user proof (sub-)goals that have to be proven for the theorem to be accepted.
+It provides different tools and solvers to the user which aid in simplifying, breaking up, and eventually proving these goals.
+It is also a functional programming language, allowing users to create their own datatypes and functions, and letting them use these in their lemmas.
+
+
+== Research Goals
+
+With that, the goal of this thesis will be to create a deductive verification tool for LLVM-IR programs within Isabelle/HOL.
+This will be achieved through the following steps:
++ defining the semantics of a subset of LLVM-IR in Isabelle,
++ implementing deductive verification infrastructure that works with these semantics,
++ creating tools to efficiently and effectively verify LLVM-IR programs,
++ use these tools on some program.
+
+
+
+= Background
+
+This section explores the background of the concepts that lay at the foundation of this thesis.
+Specifically, @sec-ded-ver explains how deductive verification works and how it is done, then @sec-llvm explores how LLVM-IR is structured and how it works semantically, and finally @sec-isabelle introduces the different features of Isabelle/HOL that will be used to achieve the different goals of this thesis.
+
+== Deductive Verification
+<sec-ded-ver>
+
+Deductive verification is a method to mathematically verify the correctness of programs based in pre- and post-conditions.
+There exist many different deductive verifiers for different languages and toolchains, based on mostly the same principles.
+
+At the core of deductive verification lie pre-conditions, commands, and post-conditions.
+The combination of the three, often referred to as Hoare triples, allows one to reason about programs.
+The pre-conditions, $P$, represent some conditions that have to hold for the command, $c$, to execute properly, while the post-conditions, $Q$, represent the intended result of the command.
+
+#code(
+  ```C
+/*@
+requires a * b < 2^32
+requires b >= 0;
+ensures \result == a * b;
+*/
+int mult(int a, int b);
+```,
+  [C `mult` Function Annotated with ACSL Specifications]
+)<lst-mult-spec>
+
+Consider @lst-mult-spec.
+It contains a specification for the function `mult`, written in ACSL, a specification language used in deductive verification of C programs using Frama-C.
+This specifies two pre-conditions and one post-condition for the function, which represents a command.
+Specifically, the pre-conditions state that the inputs `a` and `b` multiplied should not exceed the 32-bit integer limit and `b` should be non-negative for the function to execute properly.
+If this holds, then the post-condition states that the result will be the inputs `a` and `b` multiplied.
+
+#code(
+```C
+int mult(int a, int b) {
+    int result = 0;
+    for (int i = 0; i < b; i++) {
+        result += a;
+    }
+    return result;
+}
+```,
+  [C `mult` Function Implementation]
+)<lst-mult-impl>
+
+To prove that a post-condition follows from the pre-conditions and the command, the semantic meaning of the command has to be described formally.
+This time, consider the implementation of the `mult` function in @lst-mult-impl.
+To prove anything about this function, the prover needs to know what exact effects the instructions have on the execution state: how values of the `int` type behave, how assigning variables behaves, how different operations such as `++` and `+=` interact these values, and how control-flow is impacted by the `for`-loop and `return` keyword.
+Once it knows this, it can go through the instructions of the function and execute them symbolically, keeping track of how execution state and flow have been impacted thus far.
+
+
+== LLVM-IR
+<sec-llvm>
+
+#code(
+  ```llvm
+define dso_local noundef i32 @mult(int, int)(i32 noundef %a, i32 noundef %b) {
+entry:
+  %a.addr = alloca i32, align 4
+  %b.addr = alloca i32, align 4
+  %result = alloca i32, align 4
+  %i = alloca i32, align 4
+  store i32 %a, ptr %a.addr, align 4
+  store i32 %b, ptr %b.addr, align 4
+  store i32 0, ptr %result, align 4
+  store i32 0, ptr %i, align 4
+  br label %for.cond
+
+for.cond:
+  %0 = load i32, ptr %i, align 4
+  %1 = load i32, ptr %b.addr, align 4
+  %cmp = icmp slt i32 %0, %1
+  br i1 %cmp, label %for.body, label %for.end
+
+for.body:
+  %2 = load i32, ptr %a.addr, align 4
+  %3 = load i32, ptr %result, align 4
+  %add = add nsw i32 %3, %2
+  store i32 %add, ptr %result, align 4
+  br label %for.inc
+
+for.inc:
+  %4 = load i32, ptr %i, align 4
+  %inc = add nsw i32 %4, 1
+  store i32 %inc, ptr %i, align 4
+  br label %for.cond
+
+for.end:
+  %5 = load i32, ptr %result, align 4
+  ret i32 %5
+}
+```,
+  [`mult` Function compiled to LLVM-IR]
+)<lst-mult-llvm>
+
+It is possible to go even further.
+LLVM is a toolkit for the construction of compilers, optimizers, and run-time environments, and LLVM-IR is its intermediate representation (IR), a low-level programming language similar to assembly.
+It can be used to develop front-ends for any programming languages, and back-ends for any target architectures.
+It supports compiling many languages, including C, C++, Haskell, and Rust, to a wide range of target architectures, including x86-64, ARM, and RISC-V.
+An example of the C `mult` function compiled to LLVM-IR can be seen in @lst-mult-llvm.
+
+By targeting LLVM-IR with a deductive verifier, all supported front-end languages and back-end architectures are supported in a single verifier.
+This drastically increases the usefulness of such a tool: users only need to learn how to use this one tool to be able to verify the correctness of almost any program, no matter what source language it is written in or what architecture the program will run on.
+Moreover, decompilation of assembly into LLVM-IR is relatively simple due to its low-level nature and as such, verifying programs without their source code is also possible.
+
+
+== Isabelle
+<sec-isabelle>
+
+In order to do any kind of deductive verification, some proof assistant is needed.
+It has to be able to formally represent LLVM-IR and describe its exact semantics, and it needs to be able to mathematically prove theorems stated using these semantics.
+The interactive theorem-prover Isabelle is well-suited to this task.
+
+Moreover, Isabelle is a functional language and allows users to create functions that can be used within proofs.
+Most recursive functions are automatically proven to terminate, but some require the user to prove they terminate.
+Pattern matching can be used in the definitions of functions.
+For example, see the `mult` function written as a recursive function over `b` in @lst-mult-isabelle.
+Here, `a` and `b` are natural numbers.
+
+#code(
+  ```isabelle
+fun mult where
+  "mult a 0 = 0"
+| "mult a (Suc b) = a + mult a b"
+  ```,
+  [Isabelle `mult` Recursive Function]
+)<lst-mult-isabelle>
+
+Creating a theorem to prove that the `mult` function indeed multiplies the two inputs is possible by stating that `mult a b` is equal to `a * b`.
+This can be seen in @lst-mult-proof.
+
+#code(
+  ```isabelle
+lemma "mult a b = a * b"
+  apply (induction b)
+  apply simp
+  apply simp
+  done
+```,
+  [Theorem of `mult` Function Result in Isabelle]
+)<lst-mult-proof>
+
+The proof works as follows:
+- applying induction over `b`, to get two sub-goals:
+  - the base case: `mult a 0 = a * 0`
+  - the inductive step: `⋀b. mult a b = a * b ⟹ mult a (Suc b) = a * (Suc b)`
+- applying the simplifier to the base case, which rewrites `mult a 0` to its definition, `0`, and rewrites `a * 0` to `0` as well, and finally proves the sub-goal `0 = 0` using reflection.
+- applying the simplifier to the inductive step, which rewrites `mult a (Suc b)` to its definition `a + mult a b`, uses the assumption (which is specified for any b) to rewrite `mult a b` to `a * b` resulting in `a + a * b = a * (Suc b)`, and finally proves it correct using the internal definition of multiplication of natural numbers and reflection.
+
+
+== Goals and Structure
+
+The goal of this thesis is to create a deductive verifier for a subset of LLVM-IR programs using Isabelle.
+
+[LLVM background section ref] gives an in-depth overview of the structure and semantics of LLVM-IR, while [Isabelle background section ref] gives an in-depth overview of how Isabelle works and can be used for this purpose.
+
+
+For research topics:
+
+Then, [preliminary results section ref] shows what has already been implemented to meet the goal of the thesis, while [next work and planning section ref] goes over what still needs to be done along with a rough planning on when these will be achieved. Finally, [related works section ref] goes over other work in the deductive verification space.
+
+For final thesis:
+
+Then, [LLVM-IR semantics in Isabelle section ref] shows how the LLVM-IR structure and semantics have been defined within Isabelle, and [deductive verification of LLVM-IR in Isabelle section ref] explains how these semantics are used to create a deductive verifier for LLVM-IR in Isabelle.
+Next, [using the deductive verifier section ref] uses this deductive verifier to verify an LLVM-IR program.
+Finally, [related works section ref] goes over other work in the deductive verification space and [future works section ref] highlights next steps that can be taken using the LLVM-IR deductive verifier.
+
+
+#pagebreak()
+
+
+
+
+= Outline
+
+- intro sketch
+  - why is llvm deductive verification useful?
+  - what methods will be used?
+    - dedver
+    - isabelle
+    - LLVM-IR
+  - research goals
+  - include example
+
+- Introduction
+  - why software verification
+  - which methods will be used (1-2 sentences why)
+    - dedver
+    - isabelle
+    - LLVM-IR
+  - research goals
+  - motivating example
+- Background
+  - Deductive verification
+  - Isabelle
+  - LLVM(-IR)
+
+- Introduction
+  - software verification
+    - why is it necessary?
+    - what are some different methods
+      - deductive verification
+      - model checking
+      - unit-testing, acceptance testing, model-based testing, etc.
+  - deductive verification
+    - underlying principles
+      - Hoare logic (+ separation logic)
+      - Floyd's method
+    - why choose this for this thesis?
+  - LLVM
+    - why was it created?
+    - why choose it for this thesis?
+      - nearly all modern programming languages support compiling to LLVM
+      - decompiling binaries to LLVM is relatively straight-forward
+  - Isabelle
+    - what does it do?
+    - why choose it for this thesis?
+ - what I'll do (research questions!)
+  - outline of sections of thesis
+    - background
+    - LLVM-IR
+    - implementation
+- background
+  - in-depth explanation of deductive verification
+  - in-depth explanation of Isabelle (only the features I use!)
+- LLVM-IR
+  - describe syntax
+    - program made up of functions
+    - functions made up of instruction blocks
+    - instruction blocks made up of a label, phi nodes, instructions, and terminal instructions
+    - C -> LLVM-IR example
+  - describe semantics
+    - function executed -> first block executed
+    - instructions executed sequentially
+    - terminal instruction branches to a different block, or returns a value from the function
+    - phi nodes assign values to a register depending on the previous block
+- LLVM-IR in Isabelle (preliminary results)
+  - how is syntax implemented
+    - datatypes and type-synonyms
+  - how are semantics implemented
+    - interpreter over the IR
+    - functions are executed from the first block onwards
+    - blocks are executed by sequentially executing each instruction
+    - flow is handled using terminator instructions, either executing another block or returning a value
+    - instructions alter the state according to the semantics defined in the language reference#footnote("https://llvm.org/docs/LangRef.html")
+  - ! the semantics cannot be verified to be accurate, so it is trusted: assumed to be correct !
+- deductive verification of LLVM-IR (TODO)
+  - flow-graph of blocks constructed
+  - pre- and post-conditions for any diverging blocks
+  - given the pre-condition of a block, show the post-condition of the next diverging endpoint holds
+  - where to define these pre- and post-conditions
+  - instructions have some effect on state - described in weakest precondition rules
+  - verification condition generator takes the pre- and post-conditions, and provides goals to prove
+  - only partial correctness
+- related works
+- planning for completion of the thesis
+  - implement separation logic
+  - support arrays
+  - create control-flow graphs of functions
+  - implement VCG for multiple blocks strung together
+  - allow annotating blocks with pre- and post-conditions
+    - determine diverging paths
+    - instantiate phi-nodes based on previous blocks
+  - create a translation tool from native LLVM-IR to IsabeLLVM
+    - if time permits, create a parser for it within Isabelle
+    - otherwise, a simple Rust script will do
+    - perhaps also the other way around
+
+    - define MVP
+    - risk analysis
+
+#pagebreak()
+
+Introduction
 
 Say we have a C function for multiplying two integers:
 ```C
@@ -49,7 +384,7 @@ int mult(int a, int b) {
 How would one verify that the returned value is indeed equal to a and b multiplied together?
 
 
-== Software Verification
+Software Verification
 
 One way to go about verifying this result is using a software verification tool made for the program's source language.
 Such tools are used to assert that specific conditions hold in the execution of a program.
@@ -90,26 +425,26 @@ int mult(int a, int b) {
 ```
 
 With that, Frama-C is able to verify that the result will be equal to ```C a*b```.
-How this verification works under the hood is explained in @sec-ded-ver.
+How this verification works under the hood is explained in.
 However, what if we now want to use this function in a different programming language, for example in Rust or C`#`?
 This would involve finding a new verification framework and writing new specifications in its semantics.
 Is it there a way to use the same verification framework for many different languages?
 
 
 There are two different, but similar, formal systems for this exact purpose.
-These are Hoare logic, a deductive system based on axioms and inference rules@hoare-logic described in @sec-hoare-logic, and Floyd's method@floyd-method.
+These are Hoare logic, a deductive system based on axioms and inference rules@hoare-logic described in , and Floyd's method@floyd-method.
 
 - difficult to assess whether a program always does what it's supposed to
-- mostly based on Hoare Logic @sec-hoare-logic, sometimes @sec-floyd-method
+- mostly based on Hoare Logic , sometimes 
 - many existing verification tools for different languages
 
 
 Note that there is a difference between the domain of the integers a and b in the code and the specification.
 In the code, these are 32-bit integers, which means they have limits and can overflow when they become too high, while in the specification they are mathematical integers without bounds.
 
-== Deductive Verification <sec-ded-ver>
+Deductive Verification
 
-=== Hoare Logic <sec-hoare-logic>
+ Hoare Logic
 
 Hoare logic forms the basis of a lot of program verification.
 
@@ -117,13 +452,8 @@ Hoare logic forms the basis of a lot of program verification.
 - post-conditions define the expected result of successful execution
 - "if P holds and we execute c, then Q holds afterwards"
 
-It defines methods of reasoning about programs through the connections between preconditions $P$, programs $Q$ (now commonly $c$), and results of execution (or postconditions) $R$ (now commonly $Q$).
-This means that as long as the intended execution of the program can be defined in terms of assertions about the values of variables at some point in execution, Hoare logic can be used to prove the partial correctness of such programs.
-However, the logic defined by Hoare cannot be used to proof termination of programs, and as such can only prove partial correctness.@hoare-logic
-As such, extensions and alternate methods have been defined, such as separation logic (see @sec-separation-logic) and verification condition generators.
 
-
-=== Floyd's Method <sec-floyd-method>
+ Floyd's Method
 
 However, Hoare logic is not the only basis to be used for program verification.
 Another method was defined by Floyd independently from Hoare.
@@ -131,17 +461,17 @@ Rather than defining an algebra like Hoare, Floyd's method views programs as flo
 Verification conditions are defined as $V_c (P; Q)$ which assert that if $P$ holds and command $c$ is executed, then $Q$ will hold afterwards.@floyd-method
 
 
-=== Separation Logic <sec-separation-logic>
+Separation Logic
 
 - @separation-logic
 - Extension with better reasoning for programs with pointers/dynamic memory allocation
 - Axiomatic specification of memory operations @axiom-spec-memory-model
 
-=== Existing Verifiers
+Existing Verifiers
 
 Wow
 
-== LLVM
+ LLVM
 
 - intermediate language for compilation
 - supports many source languages as it's relatively simple to compile to
@@ -151,7 +481,7 @@ Wow
 - "How would we prove that this program is correct?"
 
 
-== Isabelle
+Isabelle
 
 - interactive theorem prover: allows user to specify theorems and prove them correct
 - provides user with goals to be proven and tools to prove those goals
@@ -162,13 +492,13 @@ Wow
 
 
 
-== Existing imperative program verifiers <sec-existing-verifiers>
+ Existing imperative program verifiers
 
 - Framework for VCGs using theorem provers @vcg-via-tp
 - Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
 - Verifying x86 binaries@peter-x86-verification
 
-=== Deductive verifiers
+ Deductive verifiers
 
 There exist many deductive verifiers for different purposes, based on different principles.
 Some are based on separation logic, while others use verification condition generators.
@@ -193,12 +523,12 @@ Dafny has a similar approach with a key difference: instead of compiling program
 
 
 
-= Preliminary results
+Preliminary results
 
 Work has already begun defining the semantics of LLVM in Isabelle and creating a verification condition generator based on Floyd's assertion method using weakest precondition mechanics.
 
 
-== LLVM semantics
+ LLVM semantics
 
 Part of the LLVM-IR's AST has been defined as datatypes in Isabelle.
 With this part of the AST, functions made up of instruction blocks can be executed.
@@ -312,12 +642,12 @@ value "execute_function empty_state phi_main"
 ```
 
 
-== Weakest precondition mechanics
+ Weakest precondition mechanics
 
 - Intro rules done for abstractions, some instructions
 
 
-= Rough planning
+Rough planning
 
 - Better LLVM semantics
 - Finish intro rules for instructions
