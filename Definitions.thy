@@ -60,7 +60,7 @@ datatype llvm_block_return = return_value llvm_value
 
 datatype llvm_function_definition = func_def string llvm_type
 
-datatype llvm_function = func llvm_function_definition llvm_instruction_block llvm_labeled_blocks
+datatype llvm_function = func llvm_function_definition llvm_labeled_blocks
 
 datatype llvm_metadata = meta string string string
 

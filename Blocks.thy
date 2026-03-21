@@ -100,10 +100,11 @@ partial_function (tailrec) execute_blocks :: "llvm_label option \<Rightarrow> ll
 lemmas [code] = execute_blocks.simps
 
 fun execute_function :: "llvm_function \<Rightarrow> state \<Rightarrow> (llvm_value option) result" where
-  "execute_function (func _ is ls) s = do {
-    (_, r) \<leftarrow> execute_blocks None None is ls s;
+  "execute_function (func _ ((l,b)#ls)) s = do {
+    (_, r) \<leftarrow> execute_blocks None None b ls s;
     return r
   }"
+| "execute_function _ _ = ok None"
 
 
 end

@@ -44,7 +44,7 @@ definition sb14 :: "llvm_instruction_block" where
   )"
 
 definition simple_branching_main :: "llvm_function" where
-  "simple_branching_main = func (func_def ''main'' i32) sbmain [(''10'', sb10), (''12'', sb12), (''14'', sb14)]"
+  "simple_branching_main = func (func_def ''main'' i32) [(''main'', sbmain), (''10'', sb10), (''12'', sb12), (''14'', sb14)]"
 
 lemma hoare_sbmain:
   "hoare
@@ -60,7 +60,7 @@ lemma hoare_sbmain:
     \<and> (\<exists>a. register_\<alpha> s' (reg ''5'') = Some (addr a) \<and> memory_\<alpha> s' a \<noteq> None)
     )"
   unfolding sbmain_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_sb10:
@@ -78,7 +78,7 @@ lemma hoare_sb10:
     \<and> r = branch_label ''14''
     )"
   unfolding sb10_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_sb12:
@@ -96,7 +96,7 @@ lemma hoare_sb12:
     \<and> r = branch_label ''14''
     )"
   unfolding sb12_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_sb14:
@@ -108,10 +108,66 @@ lemma hoare_sb14:
 
     (\<lambda>(s', r). r = return_value v)"
   unfolding sb14_def
-  apply vcg
+  apply block_vcg
   by auto
 
 value "execute_function simple_branching_main empty_state"
+
+lemma jasdsa:
+  assumes "Q x v"
+  shows "(case x of (s', r') \<Rightarrow> r' = return_value v) \<Longrightarrow>
+    (case x of (s', r') \<Rightarrow>
+      (case r' of
+        return_value va \<Rightarrow> Q x va
+      | branch_label l \<Rightarrow> Q' x l
+      )
+    )"
+  using assms
+  by auto
+lemma jasdsb:
+  assumes "Q' x l"
+  shows "(case x of (s', r') \<Rightarrow> r' = branch_label l) \<Longrightarrow>
+       (case x of (s', r') \<Rightarrow>
+         (case r' of
+           return_value v \<Rightarrow> Q x v
+         | branch_label la \<Rightarrow> Q' x la))"
+  using assms
+  by auto
+
+lemma "verify_from (annotated
+      simple_branching_main
+
+      [
+        (''14'', (\<lambda>s. \<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some (vi32 3))))
+      ]
+
+      (\<lambda>(v', s'). v' = vi32 3)
+    ) ''main''"
+  unfolding simple_branching_main_def sbmain_def sb10_def
+  apply vcg
+(* TODO: figure out how to match subgoal *)
+  oops
+
+lemma "verify_from (annotated
+      simple_branching_main
+
+      [
+        (''14'', (\<lambda>s. \<exists>a. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some (vi32 3))))
+      ]
+
+      (\<lambda>(v', s'). v' = vi32 3)
+    ) ''14''"
+  unfolding simple_branching_main_def sb14_def
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step_dbg apply (elim exE) apply auto
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
 
 
 section "Phi Node"
@@ -149,7 +205,7 @@ definition p10 :: "llvm_instruction_block" where
   )"
 
 definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) pmain [(''7'', p7), (''9'', p9), (''10'', p10)]"
+  "phi_main = func (func_def ''main'' i32) [(''main'', pmain), (''7'', p7), (''9'', p9), (''10'', p10)]"
 
 
 lemma hoare_pmain:
@@ -161,19 +217,19 @@ lemma hoare_pmain:
 
   (\<lambda>(s', r). Q)"
   unfolding pmain_def
-  apply vcg
+  apply block_vcg
   oops
 
 lemma hoare_p7:
   "hoare
 
-  (\<lambda>s. (register_\<alpha> s (reg ''4'') = Some (addr a4) \<and> memory_\<alpha> s a4 \<noteq> None))
+    (\<lambda>s. (register_\<alpha> s (reg ''4'') = Some (addr a4) \<and> memory_\<alpha> s a4 \<noteq> None))
 
-  (execute_block p p7)
+    (execute_block p p7)
 
-  (\<lambda>(s', r). r = branch_label ''10'' \<and> (\<exists>a. register_\<alpha> s' (reg ''8'') = Some (vi32 1)))"
+    (\<lambda>(s', r). r = branch_label ''10'' \<and> (\<exists>a. register_\<alpha> s' (reg ''8'') = Some (vi32 1)))"
   unfolding p7_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_p9:
@@ -185,7 +241,7 @@ lemma hoare_p9:
 
   (\<lambda>(s', r). r = branch_label ''10'')"
   unfolding p9_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_p10_7:
@@ -197,7 +253,7 @@ lemma hoare_p10_7:
 
   (\<lambda>(s', r). r = return_value v)"
   unfolding p10_def
-  apply vcg
+  apply block_vcg
   by auto
 
 lemma hoare_p10_9:
@@ -209,7 +265,7 @@ lemma hoare_p10_9:
 
   (\<lambda>(s', r). r = return_value (vi32 0))"
   unfolding p10_def
-  apply vcg
+  apply block_vcg
   by auto
 
 
