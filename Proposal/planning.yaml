@@ -1,0 +1,51 @@
+show-today: false
+
+headers:
+  - month
+
+start: 2026-04-07
+end: 2026-06-29
+
+tasks:
+  - name: Main Goals
+    subtasks:
+      - name: SG3
+        start: 2026-04-07
+        end: 2026-04-19
+      - name: SG4
+        start: 2026-04-12
+        end: 2026-04-26
+  - name: Extension Goals
+    subtasks:
+      - name: EG2
+        start: 2026-04-26
+        end: 2026-05-10
+      - name: EG3
+        start: 2026-05-03
+        end: 2026-05-17
+      - name: EG1
+        start: 2026-05-10
+        end: 2026-05-24
+      - name: EG4
+        start: 2026-05-17
+        end: 2026-05-31
+  - name: Writing Thesis
+    subtasks:
+      - name: Draft Version
+        start: 2026-04-26
+        end: 2026-06-14
+      - name: Final Version
+        start: 2026-06-14
+        end: 2026-06-21
+  - name: Presentation
+    start: 2026-06-21
+    end: 2026-06-29
+milestones:
+  - name: MVP
+    date: 2026-04-26
+  - name: Final Tool
+    date: 2026-05-31
+  - name: Draft Hand-in
+    date: 2026-06-14
+  - name: Final Hand-in
+    date: 2026-06-21

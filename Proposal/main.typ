@@ -1,4 +1,3 @@
-
 #let title-page(title:[], email:[], name:[], fill: yellow, body) = {
   set page(margin: (top: 3cm, rest: 4cm))
   set text(font: "Source Sans Pro", size: 14pt)
@@ -16,7 +15,7 @@
   align(bottom + left)[#datetime.today().display()]
   pagebreak()
   set page(fill: none, margin: auto)
-  align(horizon, outline(indent: auto))
+  align(horizon, outline(indent: auto, depth: 2))
   pagebreak()
   body
 }
@@ -43,70 +42,40 @@
 
 #include("background.typ")
 
+#include("results.typ")
+
+#include("relatedwork.typ")
+
+#include("planning.typ")
 
 #pagebreak()
 
 
 
-
+/*
 = Outline
-
-- intro sketch
-  - why is llvm deductive verification useful?
-  - what methods will be used?
-    - dedver
-    - isabelle
-    - LLVM-IR
-  - research goals
-  - include example
 
 - Introduction
   - why software verification
+  - motivating example
   - which methods will be used (1-2 sentences why)
     - dedver
-    - isabelle
     - LLVM-IR
+    - isabelle
   - research goals
-  - motivating example
 - Background
   - Deductive verification
-  - Isabelle
   - LLVM(-IR)
+  - Isabelle
 - Preliminary Results
   - LLVM-IR semantics in Isabelle
   - Deductive verification infrastructure
   - Tools to efficiently verify programs
   - Small working examples
-- 
+- Related Work
+- Planning
 
-- Introduction
-  - software verification
-    - why is it necessary?
-    - what are some different methods
-      - deductive verification
-      - model checking
-      - unit-testing, acceptance testing, model-based testing, etc.
-  - deductive verification
-    - underlying principles
-      - Hoare logic (+ separation logic)
-      - Floyd's method
-    - why choose this for this thesis?
-  - LLVM
-    - why was it created?
-    - why choose it for this thesis?
-      - nearly all modern programming languages support compiling to LLVM
-      - decompiling binaries to LLVM is relatively straight-forward
-  - Isabelle
-    - what does it do?
-    - why choose it for this thesis?
- - what I'll do (research questions!)
-  - outline of sections of thesis
-    - background
-    - LLVM-IR
-    - implementation
-- background
-  - in-depth explanation of deductive verification
-  - in-depth explanation of Isabelle (only the features I use!)
+
 - LLVM-IR
   - describe syntax
     - program made up of functions
@@ -153,298 +122,6 @@
     - define MVP
     - risk analysis
 
-#pagebreak()
-
-Introduction
-
-Say we have a C function for multiplying two integers:
-```C
-int mult(int a, int b) {
-    int result = 0;
-    for (int i = 0; i < b; i++) {
-        result += a;
-    }
-    return result;
-}
-```
-How would one verify that the returned value is indeed equal to a and b multiplied together?
-
-
-Software Verification
-
-One way to go about verifying this result is using a software verification tool made for the program's source language.
-Such tools are used to assert that specific conditions hold in the execution of a program.
-For the given example, a reasonable option would be to use Frama-C.@dedver-framac
-This is a mature platform that can be used to verify specifications written in ACSL (ANSI/ISO C Specification Language), for example:
-```C
-/*@
-requires a * b < 2^32;
-requires b >= 0;
-ensures \result == a * b;
 */
-int mult(int a, int b);
-```
-
-This specification contains two pre-conditions and a post-condition.
-Specifically, the pre-condition states that the inputs multiplied together should not overflow and b should be non-negative, and the post-condition states that, if the pre-condition held, then the result of the function is equal to the two inputs multiplied together.
-
-However, these conditions are not enough to prove the correctness of the program.
-They only provide the goals for the correctness proof.
-In order actually prove that the post-condition follows from the pre-condition, the actual program and control-flow has to be taken into account.
-
-For Frama-C, this involves annotating parts of the implementation where the control-flow is non-linear.
-In our example, this is the while-loop, which has to be annotated by a loop-invariant.
-These are invariants that hold both at the start of the loop and after every single execution.
-We might define the following loop-invariant:
-```C
-int mult(int a, int b) {
-    int result = 0;
-    /*@
-    loop invariant 0 <= i <= b;
-    loop invariant result == a * i;
-    */
-    for (int i = 0; i < b; i++) {
-        result += a;
-    }
-    return result;
-}
-```
-
-With that, Frama-C is able to verify that the result will be equal to ```C a*b```.
-How this verification works under the hood is explained in.
-However, what if we now want to use this function in a different programming language, for example in Rust or C`#`?
-This would involve finding a new verification framework and writing new specifications in its semantics.
-Is it there a way to use the same verification framework for many different languages?
-
-
-There are two different, but similar, formal systems for this exact purpose.
-These are Hoare logic, a deductive system based on axioms and inference rules@hoare-logic described in , and Floyd's method@floyd-method.
-
-- difficult to assess whether a program always does what it's supposed to
-- mostly based on Hoare Logic , sometimes 
-- many existing verification tools for different languages
-
-
-Note that there is a difference between the domain of the integers a and b in the code and the specification.
-In the code, these are 32-bit integers, which means they have limits and can overflow when they become too high, while in the specification they are mathematical integers without bounds.
-
-Deductive Verification
-
- Hoare Logic
-
-Hoare logic forms the basis of a lot of program verification.
-
-- pre-conditions define what is needed to execute successfully
-- post-conditions define the expected result of successful execution
-- "if P holds and we execute c, then Q holds afterwards"
-
-
- Floyd's Method
-
-However, Hoare logic is not the only basis to be used for program verification.
-Another method was defined by Floyd independently from Hoare.
-Rather than defining an algebra like Hoare, Floyd's method views programs as flowcharts where each vertex represents a command being executed.
-Verification conditions are defined as $V_c (P; Q)$ which assert that if $P$ holds and command $c$ is executed, then $Q$ will hold afterwards.@floyd-method
-
-
-Separation Logic
-
-- @separation-logic
-- Extension with better reasoning for programs with pointers/dynamic memory allocation
-- Axiomatic specification of memory operations @axiom-spec-memory-model
-
-Existing Verifiers
-
-Wow
-
- LLVM
-
-- intermediate language for compilation
-- supports many source languages as it's relatively simple to compile to
-- many target architectures
-- built-in optimizations
-- example of LLVM program
-- "How would we prove that this program is correct?"
-
-
-Isabelle
-
-- interactive theorem prover: allows user to specify theorems and prove them correct
-- provides user with goals to be proven and tools to prove those goals
-- allows user to create functions and datatypes
-- theorems can incorporate these functions and datatypes
-- example of Isabelle datatype, function, and proof
-
-
-
-
- Existing imperative program verifiers
-
-- Framework for VCGs using theorem provers @vcg-via-tp
-- Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
-- Verifying x86 binaries@peter-x86-verification
-
- Deductive verifiers
-
-There exist many deductive verifiers for different purposes, based on different principles.
-Some are based on separation logic, while others use verification condition generators.
-
-Ones based on VCGs often use a frontend/backend architecture, where the frontend translates a verification problem into some intermediate language used in verification, and the backend extracts proof obligations and proves them.@dedver-viper
-With this architecture, it becomes easier to support new languages for verification, as only a new frontend needs to be created rather than reimplementing all verification infrastructure.
-This architecture aligns with that of LLVM-based compilers, which also use a separate frontend (translating the source language to the LLVM-IR) and backend (compiling the LLVM-IR to the target architecture).
-
-This architecture is brought to separation-logic based verifiers by Viper. It is a verification infrastructure, consisting of an intermediate language and two internal verifiers. Its aim is to bring the frontend/backend architecture to separation logic based verifiers. It supports many different languages through separate frontends, including Rust, Java, and C.@dedver-viper
-An example of such a front-end is VerCors. This is a verifier aimed at concurrent programs written in languages such as Java, OpenCL, and OpenMP.@dedver-vercors
-It has a prototype implementation to support verification of LLVM-IR programs called VCLLVM, which is not yet production-ready.@vercors-llvm Its purpose is similar to that of this project: create a verifier for LLVM so that all languages compiling to LLVM are immediately supported.
-
-Another separation-logic based verifier is VeriFast, aimed at verifying single- and multi-threaded C and Java programs.@dedver-verifast
-
-Dafny has a similar approach with a key difference: instead of compiling programs to Dafny from their source language, programmers instead create programs in the Dafny language, verify them there, and then compile them from Dafny to their preferred language.@dedver-dafny
-
-- RESOLVE@dedver-resolve
-- Whiley@dedver-whiley
-- Frama-C@dedver-framac
-- KIV@dedver-kiv
-- OpenJML@dedver-jml
-
-
-
-Preliminary results
-
-Work has already begun defining the semantics of LLVM in Isabelle and creating a verification condition generator based on Floyd's assertion method using weakest precondition mechanics.
-
-
- LLVM semantics
-
-Part of the LLVM-IR's AST has been defined as datatypes in Isabelle.
-With this part of the AST, functions made up of instruction blocks can be executed.
-
-The operational semantics are defined as follows:
-- Functions contain multiple labeled instruction blocks and one unlabeled block to be executed first.
-- Instruction blocks have a list of regular instructions to be executed in order and one terminator instruction that impacts execution flow.
-- Instructions are executed according to their specification in the LLVM Language Reference Manual.#footnote("https://llvm.org/docs/LangRef.html")
-
-Execution of any single instruction takes in some state and produces a state.
-This state is defined as follows:
-- It is a triple of single static assignment (SSA) values, a stack, and a heap.
-- The stack and heap have the same underlying memory definition: a list of values. They are addressable using indices in these lists.
-- SSA values are a mapping from a name to a value. Although LLVM only allows assigning them once per function, this only applies to their static definition, not their value in execution. As such, no such limitation is posed here. This means the verifier works on a superset of LLVM.
-
-The regular instructions currently (partly) implemented are:
-- alloca - allocates a new address in the stack, and keeps track of the address with some SSA name.
-- store - stores a value at some address in the stack or heap.
-- load - loads a value from some address in the stack or heap and keep track of it with an SSA name.
-- icmp - compares two values (32/64 bit signed/unsigned integers) and keep track of the result as a single bit (boolean) with an SSA name.
-- add - adds two values (32/64 bit signed/unsigned integers) and keep track of the result with an SSA name (another 32/64 bit integer or a poison value if an overflow occurred).
-- phi - stores an SSA value from a list of possible values depending on the instruction block that lead to this block.
-
-The terminator instructions implemented are:
-- br - branch to a different instruction given its label (could always be the same label, or switch based on a boolean SSA value).
-- ret - return from the function with some value.
-
-With this implementation, basic programs consisting of these instructions can already be executed.
-For example, take the following C program:
-```C
-int main() {
-    int y = 1;
-    int x = y?1:0;
-    return x;
-}
-```
-
-This might produce the following LLVM-IR code:
-```llvm
-define dso_local i32 @main() #0 {
-  %1 = alloca i32, align 4
-  %2 = alloca i32, align 4
-  %3 = alloca i32, align 4
-  %4 = alloca i32, align 4
-  store i32 0, ptr %1, align 4
-  store i32 1, ptr %2, align 4
-  %5 = load i32, ptr %2, align 4
-  %6 = icmp ne i32 %5, 0
-  br i1 %6, label %7, label %9
-
-7:
-  store i32 1, ptr %4, align 4
-  %8 = load i32, ptr %4, align 4
-  br label %10
-
-9:
-  br label %10
-
-10:
-  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
-  store i32 %11, ptr %3, align 4
-  %12 = load i32, ptr %3, align 4
-  ret i32 %12
-}
-```
-
-Encoded into the current AST representation, this becomes:
-```isabelle
-definition pmain :: "llvm_instruction_block" where
-  "pmain = ([
-    alloca ''1'' i32 (Some 4),
-    alloca ''2'' i32 (Some 4),
-    alloca ''3'' i32 (Some 4),
-    alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ssa_val ''1'') (Some 4),
-    store i32 (val (vi32 1)) (ssa_val ''2'') (Some 4),
-    load ''5'' i32 (ssa_val ''2'') (Some 4),
-    icmp ''6'' False comp_ne i32 (ssa_val ''5'') (val (vi32 0))],
-    br_i1 (ssa_val ''6'') ''7'' ''9''
-  )"
-
-definition p7 :: "llvm_instruction_block" where
-  "p7 = ([
-    store i32 (val (vi32 1)) (ssa_val ''4'') (Some 4),
-    load ''8'' i32 (ssa_val ''4'') (Some 4)],
-    br_label ''10''
-  )"
-
-definition p9 :: "llvm_instruction_block" where
-  "p9 = ([],
-    br_label ''10''
-  )"
-
-definition p10 :: "llvm_instruction_block" where
-  "p10 = ([
-    phi ''11'' i32 [(''7'', ssa_val ''8''), (''9'', val (vi32 0))],
-    store i32 (ssa_val ''11'') (ssa_val ''3'') (Some 4),
-    load ''12'' i32 (ssa_val ''3'') (Some 4)],
-    ret i32 (ssa_val ''12'')
-  )"
-
-definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) pmain [(''7'', p7), (''9'', p9), (''10'', p10)]"
-```
-
-This can be executed as follows, which gives the proper return value:
-```isabelle
-value "execute_function empty_state phi_main"
-
-= "ok (Some (vi32 1))" :: "llvm_value option result"
-```
-
-
- Weakest precondition mechanics
-
-- Intro rules done for abstractions, some instructions
-
-
-Rough planning
-
-- Better LLVM semantics
-- Finish intro rules for instructions
-- Support verification condition generation at the level of blocks
-- Add method of specifying pre- and post-conditions for code blocks 
-- Create flowchart view of code blocks
-- Match up post-condition of one block with pre-condition of subsequent block for correctness proofs
-- Support more LLVM instructions
-- Support arrays
-- Import/export from/to direct LLVM code
-
-#pagebreak()
 
 #bibliography("references.bib", style: "ieee")
