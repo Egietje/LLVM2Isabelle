@@ -1,22 +1,92 @@
+#import "functions.typ": fig
+
 = Preliminary Results (WIP)
 <sec-preliminary-results>
 
-This section will cover the following information:
+This section covers the preliminary results from work already done.
+Specifically, it details how `SG1` and `SG2` have already been achieved in @sec-llvm-in-isabelle and @sec-ver-infra respectively, and how `SG3` is being tackled in @sec-ver-tools.
 
-- `SG1` has been achieved:
-  - a subset of LLVM-IR's structure and semantics have been defined in Isabelle:
-  - structure defined using datatypes in the form of its AST
-  - semantics defined using functions that form an interpreter which can be given part of the AST to execute instruction blocks 
-- `SG2` has been achieved:
+== LLVM-IR in Isabelle
+<sec-llvm-in-isabelle>
+
+A subset of LLVM-IR's structure and semantics have been defined in Isabelle.
+The chosen subset covers basic language features that allow simple programs, such as the `mult` function from @lst-mult-llvm, to be described and executed.
+Specifically, the structure of some instructions, basic blocks, functions, and programs have been defined, as well as their semantics.
+
+The structure has been defined using datatypes in the form of its AST.
+For example, a datatype `llvm_instruction` has been defined which can be instantiated as any of the supported instructions with their specific options according to their definition in LLVM's language reference manual.
+Its definition is shown in @lst-instr-type.
+Such definitions have been made for types, typed values, identifiers, value references (either a direct value, or value from a register), alignment specifications, add wrap options, compare conditions,
+phi instructions, regular instructions, terminator instructions, basic blocks, block return values, functions, and programs.
+
+#fig(```isabelle
+datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align option"
+                          | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
+                          | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
+                          | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+                          | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
+```,
+  [Datatype Definition for LLVM-IR Instructions]
+)<lst-instr-type>
+
+On top of this representation of the AST, the semantics are defined using functions that form an interpreter.
+At the instruction level lies a function that takes in an execution state, a triple of register values, stack memory, and heap memory, as well as an `llvm_instruction`, and produces a new state result.
+This result can be successful, in which case it contains the new state, or be erroneous if some execution requirement was not met, for example when trying access a value in a register that has not been assigned.
+Using this function, a basic block executor is defined that executes its internal instructions in-order, taking in an execution state and basic block, and producing a result tuple of a new state and block return value.
+Its definition is shown in @lst-block-exec.
+For this, a monad is defined for the `result` type, so errors automatically short-circuit execution, and successful execution flows naturally.
+Block return values contain information on whether to branch to a different basic block, or return from the function with a value.
+Finally, an executor for functions is defined that uses the basic block executor to execute its basic blocks, using the block return values to properly handle control-flow.
+
+#fig(```isabelle
+fun execute_block :: "llvm_label option ⇒ llvm_instruction_block ⇒ state ⇒ (state * llvm_block_return) result" where
+  "execute_block previous ((phi name type values)#ps, is, t) s = do {
+    s' ← execute_phi previous name values s;
+    execute_block previous (ps, is, t) s'
+  }"
+| "execute_block previous ([], i#is, t) s = do {
+    s' ← execute_instruction i s;
+    execute_block previous ([], is, t) s'
+  }"
+| "execute_block previous (_, _, br_i1 v l1 l2) s = do {
+    val ← get_register s v;
+    label ← (case val of (vi1 b) ⇒ ok (if b then l1 else l2) | _ ⇒ err incompatible_types);
+    return (s, branch_label label)
+  }"
+| "execute_block previous (_, _, br_label l) s = return (s, branch_label l)"
+| "execute_block previous (_, _, ret t v) s = do {
+    res ← get_register s v;
+    return (s, return_value res)
+  }"
+```,
+  [Basic Block Execution Function]
+)<lst-block-exec>
+
+Together, the defined structure and semantics can be used to execute functions made up of the supported instructions.
+
+== Verification Infrastructure
+<sec-ver-infra>
+
   - on top of the structure and semantics, weakest pre-condition infrastucture has been defined
   - using these weakest pre-conditions, single instructions can be symbolically executed, giving the user proof-goals for their prerequisites to execute without errors and the resulting execution state, using proof-friendly abstractions
   - also, entire instruction blocks can be executed symbolically, giving the user proof-goals for successful execution of the entire block and the final execution state, using the same abstractions
-- `SG3` has been mostly achieved:
+
+
+== Verification Tools
+<sec-ver-tools>
+
   - hoare triple definition to invoke weakest pre-condition infrastructure more intuitively
   - annotated function datatype to specify pre-conditions for basic blocks in a function, as well as post-conditions for the function
   - `verify` function that takes an annotated function and produces a boolean if it can be v
   - Eisbach methods to automatically perform verification of sub-goals (along with debug variants), allowing the user to only have to deal with the final goals, or failing sub-goals (e.g. due to missing pre-conditions for basic blocks)
   - TODO is ensuring this functionality works properly, handle edge-cases more elegantly, and clean it up
+
+
+This section will cover the following information:
+
+- `SG1` has been achieved:
+- `SG2` has been achieved:
+- `SG3` has been mostly achieved:
 - `SG4` has not been achieved yet:
   - only a few simple programs have been put through the tool, too simple to say much about its true usefulness
 
