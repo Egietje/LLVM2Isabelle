@@ -38,6 +38,15 @@ partial_function (tailrec) execute_blocks_from_until :: "annotated_function \<Ri
   )"
 lemmas [code] = execute_blocks_from_until.simps
 
+fun block_transitions :: "llvm_labeled_blocks \<Rightarrow> (llvm_label * llvm_label) list" where
+  "block_transitions ((from, (_, _, br_label to)) # bs) = (from, to) # block_transitions bs"
+| "block_transitions ((from, (_, _, br_i1 _ to1 to2)) # bs) = (from, to1) # (from, to2) # block_transitions bs"
+| "block_transitions (_#bs) = block_transitions bs"
+| "block_transitions [] = []"
+
+fun transitions_to :: "(llvm_label * llvm_label) list \<Rightarrow> llvm_label list \<Rightarrow> (llvm_label option * llvm_label) list" where
+  "transitions_to ((from, to)#ls) l = (if List.member l to then (Some from,to)#transitions_to ls l else transitions_to ls l)"
+| "transitions_to [] _ = []"
 
 lemma hoare_blocks_from_until_intro:
   assumes "map_of blocks label = Some b"
@@ -58,7 +67,7 @@ lemma hoare_blocks_from_until_intro:
   shows "hoare P (execute_blocks_from_until (annotated (func fdef blocks) pre post) label prev) Q"
   apply (rule hoare_intro)
   using assms
-  apply (auto simp: execute_blocks_from_until.simps)
+  apply (auto simp: execute_blocks_from_until.simps hoare_def wp_gen_def split: if_splits llvm_block_return.splits)
   subgoal for r s h
   unfolding hoare_def wp_gen_def
   apply (cases "execute_block prev b (r, s, h)")
@@ -72,11 +81,11 @@ lemma hoare_blocks_from_until_intro:
   by fastforce
   done
 
-fun verify_from_with_precond where
-  "verify_from_with_precond (annotated (func fdef blocks) pre post) label precond =
+fun verify_blocks_hoare where
+  "verify_blocks_hoare (annotated (func fdef blocks) pre post) label prev precond =
     hoare
       precond
-      (execute_blocks_from_until (annotated (func fdef blocks) pre post) label None)
+      (execute_blocks_from_until (annotated (func fdef blocks) pre post) label prev)
       (\<lambda>(s, r). (case r of
         return_value v \<Rightarrow> post (v, s)
       | branch_label l \<Rightarrow> (case map_of pre l of
@@ -85,10 +94,27 @@ fun verify_from_with_precond where
         )
       ))"
 
-fun verify_from where
-  "verify_from (annotated f pre post) label = (case map_of pre label of
-    Some precond \<Rightarrow> verify_from_with_precond (annotated f pre post) label precond
-  | None \<Rightarrow> verify_from_with_precond (annotated f pre post) label (\<lambda>s. True))"
+fun verify_blocks_from where
+  "verify_blocks_from (annotated f pre post) label prev = (case map_of pre label of
+    Some precond \<Rightarrow> verify_blocks_hoare (annotated f pre post) label prev precond
+  | None \<Rightarrow> verify_blocks_hoare (annotated f pre post) label prev (\<lambda>s. True))"
+
+fun verify_blocks where
+  "verify_blocks f ((prev, label)#ls) = (verify_blocks_from f label prev \<and> verify_blocks f ls)"
+| "verify_blocks _ [] = True"
+
+fun verify_function where
+  "verify_function (annotated (func fdef ((first_label, first_block)#bs)) pre post) = (
+    distinct (map fst pre)
+  \<and> verify_blocks
+      (annotated (func fdef ((first_label, first_block)#bs)) pre post)
+      ((None, first_label)#(transitions_to
+        (block_transitions ((first_label, first_block)#bs))
+        (if List.member (map fst pre) first_label then map fst pre else first_label#(map fst pre))
+      ))
+  )"
+| "verify_function _ = True"
+
 
 
 section "Useful Lemmas"
@@ -129,8 +155,8 @@ method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ 
 method sub_memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"]; (fastforce | simp); fail
 method sub_register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"]; (fastforce | simp); fail
 method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"]; (fastforce | simp split: if_splits); fail
-method sub_add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]); (fastforce | simp); fail
-method sub_icmp_same_signs = rule asm_rl[of "if _ then same_signs _ _ else True"]; (fastforce | simp); fail
+method sub_add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]); (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq); fail
+method sub_icmp_same_signs = (rule asm_rl[of "if _ then same_signs32 _ _ else True"] | rule asm_rl[of "if _ then same_signs64 _ _ else True"]); (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq); fail
 method sub_map_of_some = rule asm_rl[of "map_of _ _ = Some _"]; (fastforce | simp); fail
 method sub_distinct_first = rule asm_rl[of "distinct (map fst _)"]; (fastforce | simp); fail
 method sub_some_refl = rule asm_rl[of "Some _ = Some _"]; rule refl; fail
@@ -199,14 +225,19 @@ method block_vcg_dbg = block_vcg_step_dbg+
 
 subsection "Multi-Block VCG Methods"
 
-method clean_goal = rule asm_rl[of "case _ of _ \<Rightarrow> (case _ of _ \<Rightarrow> _)"]
-                  , auto simp only: split prod.case split: llvm_block_return.splits option.splits if_splits; (simp; fail)?
+method clean_goal' = (simp (no_asm_simp) split: prod.splits del: register_\<alpha>.simps, intro allI conjI impI)
+method clean_goal = (match conclusion in "case _ of (s, r) \<Rightarrow> (case r of return_value _ \<Rightarrow> _ | branch_label _ \<Rightarrow> _)" \<Rightarrow> clean_goal')
+
+method clean_case_prod_goal = simp only: split split: prod.splits; intro allI impI conjI; (simp; fail)?; elim conjE
+
 
 method unfold_execute_blocks_from_until = rule asm_rl[of "hoare _ (execute_blocks_from_until _ _ _) _"], rule hoare_blocks_from_until_intro, sub_map_of_some
-method unfold_verify = rule asm_rl[of "verify_from _ _"], simp
+method unfold_verify_blocks_from = rule asm_rl[of "verify_blocks_from _ _ _"], simp
 
-method vcg_step = unfold_verify | unfold_execute_blocks_from_until | block_vcg_step
-method vcg_step_dbg = unfold_verify | unfold_execute_blocks_from_until | block_vcg_step_dbg 
+method unfold_verify_function = rule asm_rl[of "verify_function _"], simp del: verify_blocks_from.simps, (intro conjI)?
+
+method vcg_step = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step | (force | simp split: if_splits add: word_sless_alt word_sle_eq; fail)
+method vcg_step_dbg = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step_dbg | (force | simp split: if_splits add: word_sless_alt word_sle_eq; fail)
 method vcg = vcg_step+
 method vcg_dbg = vcg_step_dbg+
 

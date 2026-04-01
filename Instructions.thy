@@ -80,16 +80,20 @@ section "Add instruction"
 (* TODO: support pointers *)
 
 fun unsigned_overflow32 :: "word32 \<Rightarrow> word32 \<Rightarrow> bool" where
-  "unsigned_overflow32 a b = ((a + b) < a)"
+  "unsigned_overflow32 a b = (a + b < a)"
 
 fun signed_overflow32 :: "word32 \<Rightarrow> word32 \<Rightarrow> bool" where
-  "signed_overflow32 a b = (sint a + sint b \<noteq> sint (a + b))"
+  "signed_overflow32 a b = ((a <s 0 \<and> b <s 0 \<and> 0 \<le>s a+b) \<or> (0 \<le>s a \<and> 0 \<le>s b \<and> a+b <s 0))"
+
+(* a and b are negative \<longrightarrow> a + b must be negative *)
+(* a and b are positive \<longrightarrow> a + b must be positive *)
+(* a and b are different \<longrightarrow> a + b cannot overflow*)
 
 fun unsigned_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
-  "unsigned_overflow64 a b = ((a + b) < a)"
+  "unsigned_overflow64 a b = (a + b < a)"
 
 fun signed_overflow64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
-  "signed_overflow64 a b = (sint a + sint b \<noteq> sint (a + b))"
+  "signed_overflow64 a b = ((a <s 0 \<and> b <s 0 \<and> 0 \<le>s a+b) \<or> (0 \<le>s a \<and> 0 \<le>s b \<and> a+b <s 0))"
 
 definition add_no_poison32 :: "llvm_add_wrap \<Rightarrow> word32 \<Rightarrow> word32 \<Rightarrow> bool" where
   "add_no_poison32 wrap a b = (
@@ -159,26 +163,26 @@ section "Compare instruction"
 fun compare_values_32 :: "llvm_compare_condition \<Rightarrow> word32 \<Rightarrow> word32 \<Rightarrow> llvm_value" where
   "compare_values_32 comp_eq a b = vi1 (a = b)"
 | "compare_values_32 comp_ne a b = vi1 (a \<noteq> b)"
-| "compare_values_32 comp_ugt a b = vi1 ((uint a) > (uint b))"
-| "compare_values_32 comp_uge a b = vi1 ((uint a) \<ge> (uint b))"
-| "compare_values_32 comp_ult a b = vi1 ((uint a) < (uint b))"
-| "compare_values_32 comp_ule a b = vi1 ((uint a) \<le> (uint b))"
-| "compare_values_32 comp_sgt a b = vi1 ((sint a) > (sint b))"
-| "compare_values_32 comp_sge a b = vi1 ((sint a) \<ge> (sint b))"
-| "compare_values_32 comp_slt a b = vi1 ((sint a) < (sint b))"
-| "compare_values_32 comp_sle a b = vi1 ((sint a) \<le> (sint b))"
+| "compare_values_32 comp_ugt a b = vi1 (a > b)"
+| "compare_values_32 comp_uge a b = vi1 (a \<ge> b)"
+| "compare_values_32 comp_ult a b = vi1 (a < b)"
+| "compare_values_32 comp_ule a b = vi1 (a \<le> b)"
+| "compare_values_32 comp_sgt a b = vi1 (b <s a)"
+| "compare_values_32 comp_sge a b = vi1 (b \<le>s a)"
+| "compare_values_32 comp_slt a b = vi1 (a <s b)"
+| "compare_values_32 comp_sle a b = vi1 (a \<le>s b)"
 
 fun compare_values_64 :: "llvm_compare_condition \<Rightarrow> word64 \<Rightarrow> word64 \<Rightarrow> llvm_value" where
   "compare_values_64 comp_eq a b = vi1 (a = b)"
 | "compare_values_64 comp_ne a b = vi1 (a \<noteq> b)"
-| "compare_values_64 comp_ugt a b = vi1 ((uint a) > (uint b))"
-| "compare_values_64 comp_uge a b = vi1 ((uint a) \<ge> (uint b))"
-| "compare_values_64 comp_ult a b = vi1 ((uint a) < (uint b))"
-| "compare_values_64 comp_ule a b = vi1 ((uint a) \<le> (uint b))"
-| "compare_values_64 comp_sgt a b = vi1 ((sint a) > (sint b))"
-| "compare_values_64 comp_sge a b = vi1 ((sint a) \<ge> (sint b))"
-| "compare_values_64 comp_slt a b = vi1 ((sint a) < (sint b))"
-| "compare_values_64 comp_sle a b = vi1 ((sint a) \<le> (sint b))"
+| "compare_values_64 comp_ugt a b = vi1 (a > b)"
+| "compare_values_64 comp_uge a b = vi1 (a \<ge> b)"
+| "compare_values_64 comp_ult a b = vi1 (a < b)"
+| "compare_values_64 comp_ule a b = vi1 (a \<le> b)"
+| "compare_values_64 comp_sgt a b = vi1 (b <s a)"
+| "compare_values_64 comp_sge a b = vi1 (b \<le>s a)"
+| "compare_values_64 comp_slt a b = vi1 (a <s b)"
+| "compare_values_64 comp_sle a b = vi1 (a \<le>s b)"
 
 (* TODO: support pointers *)
 fun compare_values :: "llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
@@ -186,13 +190,15 @@ fun compare_values :: "llvm_compare_condition \<Rightarrow> llvm_value \<Rightar
 | "compare_values c (vi64 a) (vi64 b) = ok (compare_values_64 c a b)"
 | "compare_values _ _ _ = err incompatible_types"
 
-fun same_signs :: "int \<Rightarrow> int \<Rightarrow> bool" where
-  "same_signs a b = ((a \<ge> 0 \<and> b \<ge> 0) \<or> (a < 0 \<and> b < 0))"
+fun same_signs32 :: "word32 \<Rightarrow> word32 \<Rightarrow> bool" where
+  "same_signs32 a b = ((a <s 0 \<and> b <s 0) \<or> (0 \<le>s a \<and> 0 \<le>s b))"
+fun same_signs64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
+  "same_signs64 a b = ((a <s 0 \<and> b <s 0) \<or> (0 \<le>s a \<and> 0 \<le>s b))"
 
 fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
   "compare_values_sign False c a b = compare_values c a b"
-| "compare_values_sign True c (vi32 a) (vi32 b) = (if same_signs (sint a) (sint b) then compare_values c (vi32 a) (vi32 b) else ok poison)"
-| "compare_values_sign True c (vi64 a) (vi64 b) = (if same_signs (sint a) (sint b) then compare_values c (vi64 a) (vi64 b) else ok poison)"
+| "compare_values_sign True c (vi32 a) (vi32 b) = (if same_signs32 a b then compare_values c (vi32 a) (vi32 b) else ok poison)"
+| "compare_values_sign True c (vi64 a) (vi64 b) = (if same_signs64 a b then compare_values c (vi64 a) (vi64 b) else ok poison)"
 | "compare_values_sign True c _ _ = err incompatible_types"
 
 definition execute_icmp :: "llvm_register_name \<Rightarrow> llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
@@ -204,14 +210,14 @@ definition execute_icmp :: "llvm_register_name \<Rightarrow> llvm_same_sign \<Ri
   }"
 
 lemma icmp32_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs (sint v1') (sint v2') else True)"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs32 v1' v2' else True)"
   shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_32 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def
   by (cases ss; intro wp_intro; auto; intro wp_intro; auto)
 
 lemma icmp64_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "(if ss then same_signs (sint v1') (sint v2') else True)"
+  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "(if ss then same_signs64 v1' v2' else True)"
   shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_64 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def

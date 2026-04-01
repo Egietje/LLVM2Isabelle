@@ -121,6 +121,11 @@ lemma memory_\<alpha>_free_validity[simp]:
   using assms
   by simp
 
+lemma memory_\<alpha>_distinct_addresses[simp]:
+  "memory_\<alpha> s a1 = Some v \<Longrightarrow> memory_\<alpha> s a2 = None \<Longrightarrow> a1 \<noteq> a2"
+  by auto
+
+
 
 
 section "memory_\<alpha> operations"
