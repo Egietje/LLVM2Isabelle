@@ -1,49 +1,35 @@
-= Related Work (WIP)
+= Related Work
 <sec-related-work>
 
-This section will cover, among others, the following work:
+There exist quite a few deductive verifiers for specific purposes, toolchains, and languages.
+Many of them only support a single language or language family.
+For example, Frama-C focuses on the C language, with its WP plugin providing deductive verification of C programs based on weakest-precondition calculus just like our verifier.@dedver-framac
 
-- Framework for VCGs using theorem provers @vcg-via-tp
-- Exporting from Isabelle to LLVM@peter-isabelle-to-llvm
-- Deductive verification backend@dedver-viper
-- Write program in Dafny, verify, and then compile to your preferred language@dedver-dafny
+Others, like Viper, take an approach similar in philosophy to LLVM, where a common verification backend is established for which different frontends can be created to support new languages.@dedver-viper
+Viper defines its own intermediate language which it is able to verify, making it possible to compile other languages to this language to verify them.
+Its verification is based on verification condition generation or symbolic execution depending on the user's preferences.
 
-Deductive Verifiers:
-- Verifying x86 binaries@peter-x86-verification
-- RESOLVE@dedver-resolve
-- Whiley@dedver-whiley
-- Frama-C@dedver-framac
-- KIV@dedver-kiv
-- OpenJML@dedver-jml
-- VeriFast@dedver-verifast
-- VerCors@dedver-vercors
-  - WIP LLVM frontend@vercors-llvm
-...
+Alongside first-party Viper frontends for specific languages like Python, Rust, and Go, there is also the VerCors frontend.@dedver-vercors
+VerCors is a deductive verification tool made specifically for concurrent and parallel programs, supporting a variety of source languages like Java and OpenCL.
+Interestingly, there exists a project within VerCors, PALLAS, to support the verification of LLVM-IR.@vercors-llvm
+However, this project is still being worked on and not ready to be used.
 
-/*
+Dafny flips this logic, instead providing a source language to create and verify programs in, which can then be compiled to different programming languages.@dedver-dafny
+It uses Boogie internally for verification, which itself comes with another intermediate verification language.
+While this approach works well for new programs that are verified from the start, this does not address the need to verify existing programs.
 
- Existing imperative program verifiers
+Like Viper, $KK$ is a semantic framework that aims to solve the issue of creating a verification tool for each programming language.@dedver-kk
+It uses the deductive proof assistant KIV which is also based on weakest precondition calculus.@dedver-kiv
+$KK$ allows describing the syntax and semantics of languages, from which algebraic specifications to be used in KIV can be derived.
 
+All previously mentioned verifiers mainly focus on verifying programs using their source code.
+Of course, there are also cases where a program's source code is no longer available, but its binary needs to be verified.
+There exist different verifiers for these purposes, such as for memory preservation of x86-64 binaries based on symbolic execution and Floyd-style verification.@peter-x86-verification
+A somewhat related verifier has also been created to check source-level specifications within the produced x86 binary, based also on Floyd's method.@dedver-x86-source
 
- Deductive verifiers
+In conclusion, most if not all existing deductive verification tools involve similar methods as used in this thesis: weakest precondition calculus, Hoare logic, Floyd-style verification, and/or verification condition generation.
+Additionally, many of them aim to tackle the same problem: how to get around the need to define new verifiers for each programming language.
+This thesis differs from most literature in the way it aims to solve this problem, by creating a verifier for LLVM-IR, which most programming languages can be compiled to.
+Furthermore, due to its low-level nature, it is relatively easy to decompile program binaries into LLVM-IR.
+While other initiatives for this purpose exists, they are not yet in a production-ready state.
 
-There exist many deductive verifiers for different purposes, based on different principles.
-Some are based on separation logic, while others use verification condition generators.
-
-Ones based on VCGs often use a frontend/backend architecture, where the frontend translates a verification problem into some intermediate language used in verification, and the backend extracts proof obligations and proves them.@dedver-viper
-With this architecture, it becomes easier to support new languages for verification, as only a new frontend needs to be created rather than reimplementing all verification infrastructure.
-This architecture aligns with that of LLVM-based compilers, which also use a separate frontend (translating the source language to the LLVM-IR) and backend (compiling the LLVM-IR to the target architecture).
-
-This architecture is brought to separation-logic based verifiers by Viper. It is a verification infrastructure, consisting of an intermediate language and two internal verifiers. Its aim is to bring the frontend/backend architecture to separation logic based verifiers. It supports many different languages through separate frontends, including Rust, Java, and C.@dedver-viper
-An example of such a front-end is VerCors. This is a verifier aimed at concurrent programs written in languages such as Java, OpenCL, and OpenMP.@dedver-vercors
-It has a prototype implementation to support verification of LLVM-IR programs called VCLLVM, which is not yet production-ready.@vercors-llvm Its purpose is similar to that of this project: create a verifier for LLVM so that all languages compiling to LLVM are immediately supported.
-
-Another separation-logic based verifier is VeriFast, aimed at verifying single- and multi-threaded C and Java programs.@dedver-verifast
-
-Dafny has a similar approach with a key difference: instead of compiling programs to Dafny from their source language, programmers instead create programs in the Dafny language, verify them there, and then compile them from Dafny to their preferred language.@dedver-dafny
-
-
-
-
-
-*/

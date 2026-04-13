@@ -4,8 +4,8 @@
 = Planning
 <sec-planning>
 
-Much of the minimum viable product has already been implemented without a clear planning.
-The remaining work will be implemented according to the GANTT chart shown in @fig-planning.
+Much of the minimum viable product has already been implemented.
+The remaining work for the MVP will be implemented according to the GANTT chart shown in @fig-planning.
 Furthermore, it shows the extra features to be implemented on top of the MVP, along with rough estimates on how long they will take to complete and when they might be implemented.
 In addition to that, it shows roughly when work on the tool itself will conclude, and the accumulated work and research will be gathered and written into the final thesis document.
 The current aimed-for date to complete the thesis is the 19th of June, which can be extended if necessary.

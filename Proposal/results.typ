@@ -1,10 +1,10 @@
 #import "functions.typ": fig
 
-= Preliminary Results (WIP)
+= Preliminary Results
 <sec-preliminary-results>
 
 This section covers the preliminary results from work already done.
-Specifically, it details how `SG1` and `SG2` have already been achieved in @sec-llvm-in-isabelle and @sec-ver-infra respectively, and how `SG3` is being tackled in @sec-ver-tools.
+Specifically, it details how `SG1` has been achieved in @sec-llvm-in-isabelle,how much has been achieved for `SG2` in @sec-ver-infra, and how `SG3` and `SG4` will be tackled in @sec-ver-tools and @sec-ver-example.
 
 == LLVM-IR in Isabelle
 <sec-llvm-in-isabelle>
@@ -30,13 +30,21 @@ datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align opti
 )<lst-instr-type>
 
 On top of this representation of the AST, the semantics are defined using functions that form an interpreter.
-At the instruction level lies a function that takes in an execution state, a triple of register values, stack memory, and heap memory, as well as an `llvm_instruction`, and produces a new state result.
-This result can be successful, in which case it contains the new state, or be erroneous if some execution requirement was not met, for example when trying access a value in a register that has not been assigned.
-Using this function, a basic block executor is defined that executes its internal instructions in-order, taking in an execution state and basic block, and producing a result tuple of a new state and block return value.
-Its definition is shown in @lst-block-exec.
-For this, a monad is defined for the `result` type, so errors automatically short-circuit execution, and successful execution flows naturally.
-Block return values contain information on whether to branch to a different basic block, or return from the function with a value.
-Finally, an executor for functions is defined that uses the basic block executor to execute its basic blocks, using the block return values to properly handle control-flow.
+It is made up of functions implementing different execution levels, each being made up of the functions of the level below it:
+- state operations: reading from and writing to memory and registers,
+- instructions: performing state operations and applying some additional logic,
+- basic blocks: consecutively executing instructions, its definition is shown in @lst-block-exec,
+- functions: executing basic blocks and handling control-flow. Note that this execution function is partial, which means it does not guarantee termination. It is possible for functions to loop forever.
+
+At the core of this interpreter lies the `state`, a triple of registers, stack memory, and heap memory.
+State operations directly interact with its internal definition, providing abstractions that make the easier to operate on and reason about.
+
+Furthermore, it uses the `result` datatype, which can either represent successful execution containing some value, or erroneous execution containing an error message.
+Monad laws have been defined on top of it, making it easy to chain together function calls that might produce an error.
+This monad short-circuits execution when an error is encountered, or flows naturally when execution is successful.
+An error is produced when some execution requirement of an instruction is not met, such as when the `load` instruction tries to load a value from uninitialized memory.
+
+Together, the defined structure and semantics can be used to execute functions made up of the supported instructions.
 
 #fig(```isabelle
 fun execute_block :: "llvm_label option ⇒ llvm_instruction_block ⇒ state ⇒ (state * llvm_block_return) result" where
@@ -62,158 +70,84 @@ fun execute_block :: "llvm_label option ⇒ llvm_instruction_block ⇒ state ⇒
   [Basic Block Execution Function]
 )<lst-block-exec>
 
-Together, the defined structure and semantics can be used to execute functions made up of the supported instructions.
-
 == Verification Infrastructure
 <sec-ver-infra>
 
-  - on top of the structure and semantics, weakest pre-condition infrastucture has been defined
-  - using these weakest pre-conditions, single instructions can be symbolically executed, giving the user proof-goals for their prerequisites to execute without errors and the resulting execution state, using proof-friendly abstractions
-  - also, entire instruction blocks can be executed symbolically, giving the user proof-goals for successful execution of the entire block and the final execution state, using the same abstractions
+Building on the defined semantics, we have already implemented verification infrastructure to achieve most of `SG2`.
+At its core are weakest pre-conditions defined for the `result` type, shown in @lst-wp-def.
+These can be used in lemmas to prove that given some pre-conditions, execution of some command `c` will always be successful, and some post-conditions hold for the return value of `c`.
 
+#fig(```isabelle
+definition wp :: "'a result ⇒ ('a ⇒ bool) ⇒ bool" where
+  "wp c Q = (case c of ok v ⇒ Q v | err _ ⇒ False)"
+```,
+  [`wp` Definition]
+)<lst-wp-def>
+
+These conditions are specified using abstractions over the state for easy verification, `memory_`$alpha$ and `register_`$alpha$.
+These abstractions can be used to assert whether some memory address is allocated or initialized or not, whether it contains a specific value, and whether specific registers contain any or a specific value.
+
+For example, consider the `load` instruction.
+It reads a value stored in memory from a pointer stored in a register into another register.
+As such, to execute successfully, it needs the given register to contain a pointer, and corresponding memory address to be allocated and initialized.
+Furthermore, when executed successfully, it leaves memory exactly as it was before, but updates a single register to the value read from memory.
+These facts have been described using our weakest precondition definition in @lst-load-wp.
+Here, the assumptions of the lemma are the pre-conditions, the first argument for `wp` is the command, and the second argument is the post-condition.
+
+#fig(
+```isabelle
+lemma
+  assumes "register_α s pointer = Some (addr a)"
+  and "memory_α s a = Some (Some v)"
+  shows "wp
+    (execute_load name pointer s)
+    (λs'. memory_α s' = memory_α s
+    ∧ register_α s' = (register_α s)(reg name := Some v))"
+```,
+  [`load` Weakest Precondition Lemma]
+)<lst-load-wp>
+
+Such lemmas have been defined from the bottom up for all state operations, instructions, and basic blocks.
+By combining these lemmas with a consequence rule it is possible to use them in proofs for higher-level weakest preconditions, yielding new sub-goals for each of the preconditions of the constituent commands.
+
+For example, `execute_load` is made up of the state operations `get_register`, `get_memory`, and `set_register`, along with some logic to ensure `get_register` returned an address.
+Applying their respective weakest pre-condition lemmas combined with the consequence rule, yields the following sub-goals for the lemma in @lst-load-wp:
+- `get_register`'s precondition:\ `register_α s pointer ≠ None`
+- `get_register`'s postcondition and proving its value is an address:\ `register_α s pointer = Some x ⟹ ∄xa. x = addr xa ⟹ False`
+- `get_memory`'s precondition following from `get_register`'s postcondition:\ `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa ≠ None`
+- `get_memory`'s precondition:\ `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa ≠ Some None`- `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa = Some (Some xb) ⟹ register_α xc = (register_α s)(reg name ↦ xb) ∧ memory_α xc = memory_α s ⟹ memory_α xc = memory_α s ∧ register_α xc = (register_α s)(reg name ↦ v)`\ (`get_register` and `get_memory`'s postconditions, with `execute_load`'s postcondition)
+All of these can be proven to hold given the assumptions, so `execute_load` has been proven to always execute correctly given these assumptions. Moreover, given successful execution, the postcondition has also been proven to hold for the returned state.
+
+The workings of these weakest preconditions are essentially the same as that of Hoare triples.
+The connection becomes clear with our weakest preconditions expressed as `P ⟹ wp c Q`, representing the Hoare triple `P c Q`.
+Because most literature is based on Hoare triples and being simpler to define, we have created a simple definition to specify weakest preconditions as Hoare triples.
+This unfolds `hoare P c Q` to the form `P = wp c Q`.
+Note that the definition, shown in @lst-hoare-def, adds a variable `x` to make `hoare` operate on `state`, while `wp` operates on `result`.
+
+#fig(
+  ```isabelle definition "hoare P c Q ≡ (∀x. P x ⟶ wp (c x) Q)"```, [Hoare Triple Definition]
+)<lst-hoare-def>
+
+With that, Hoare triples can be defined for the execution of basic blocks.
+Using our weakest precondition rules, we can obtain sub-goals to prove that the basic block executes successfully, as well as an abstract representation of the state reached after the block has been executed.
+
+On top of that, we have defined methods to extend this verification to entire functions based on Floyd's method, including creating a control-flow graph.
+However, these remain unfinished, so we will need to finish these going forward to fully achieve `SG2`.
 
 == Verification Tools
 <sec-ver-tools>
 
-  - hoare triple definition to invoke weakest pre-condition infrastructure more intuitively
-  - annotated function datatype to specify pre-conditions for basic blocks in a function, as well as post-conditions for the function
-  - `verify` function that takes an annotated function and produces a boolean if it can be v
-  - Eisbach methods to automatically perform verification of sub-goals (along with debug variants), allowing the user to only have to deal with the final goals, or failing sub-goals (e.g. due to missing pre-conditions for basic blocks)
-  - TODO is ensuring this functionality works properly, handle edge-cases more elegantly, and clean it up
+Work has begun creating verification tools to use our Hoare triples intuitively and effectively.
+For example, Eisbach methods have been created to automatically prove specific sub-goals for different instructions as well as handle multi-block proofs.
+These are already effective at clearing sub-goals of the instructions within a block, leaving the user to deal with just the final proof goal, or any failing sub-goals which indicate missing pre-conditions.
+While mostly functional, these remain incomplete and depend on the completion of `SG2` to finish, which means there is still some work to do to achieve `SG3`.
 
 
-This section will cover the following information:
+== Verification of Example programs
+<sec-ver-example>
 
-- `SG1` has been achieved:
-- `SG2` has been achieved:
-- `SG3` has been mostly achieved:
-- `SG4` has not been achieved yet:
-  - only a few simple programs have been put through the tool, too simple to say much about its true usefulness
+Finally, some simple example programs have been encoded into our LLVM-IR structure.
+These have not been fully verified as we need `SG2` and `SG3` to be completed before that, but their basic blocks have been useful in testing the functionality of what has been implemented already.
+One such program is the `mult` function from @lst-mult-llvm.
+Of course, more programs of similar or higher complexity need to be defined and verified before `SG4` can be considered achieved.
 
-/*
-
-
-Preliminary results
-
-Work has already begun defining the semantics of LLVM in Isabelle and creating a verification condition generator based on Floyd's assertion method using weakest precondition mechanics.
-
-
- LLVM semantics
-
-Part of the LLVM-IR's AST has been defined as datatypes in Isabelle.
-With this part of the AST, functions made up of instruction blocks can be executed.
-
-The operational semantics are defined as follows:
-- Functions contain multiple labeled instruction blocks and one unlabeled block to be executed first.
-- Instruction blocks have a list of regular instructions to be executed in order and one terminator instruction that impacts execution flow.
-- Instructions are executed according to their specification in the LLVM Language Reference Manual.#footnote("https://llvm.org/docs/LangRef.html")
-
-Execution of any single instruction takes in some state and produces a state.
-This state is defined as follows:
-- It is a triple of single static assignment (SSA) values, a stack, and a heap.
-- The stack and heap have the same underlying memory definition: a list of values. They are addressable using indices in these lists.
-- SSA values are a mapping from a name to a value. Although LLVM only allows assigning them once per function, this only applies to their static definition, not their value in execution. As such, no such limitation is posed here. This means the verifier works on a superset of LLVM.
-
-The regular instructions currently (partly) implemented are:
-- alloca - allocates a new address in the stack, and keeps track of the address with some SSA name.
-- store - stores a value at some address in the stack or heap.
-- load - loads a value from some address in the stack or heap and keep track of it with an SSA name.
-- icmp - compares two values (32/64 bit signed/unsigned integers) and keep track of the result as a single bit (boolean) with an SSA name.
-- add - adds two values (32/64 bit signed/unsigned integers) and keep track of the result with an SSA name (another 32/64 bit integer or a poison value if an overflow occurred).
-- phi - stores an SSA value from a list of possible values depending on the instruction block that lead to this block.
-
-The terminator instructions implemented are:
-- br - branch to a different instruction given its label (could always be the same label, or switch based on a boolean SSA value).
-- ret - return from the function with some value.
-
-With this implementation, basic programs consisting of these instructions can already be executed.
-For example, take the following C program:
-```C
-int main() {
-    int y = 1;
-    int x = y?1:0;
-    return x;
-}
-```
-
-This might produce the following LLVM-IR code:
-```llvm
-define dso_local i32 @main() #0 {
-  %1 = alloca i32, align 4
-  %2 = alloca i32, align 4
-  %3 = alloca i32, align 4
-  %4 = alloca i32, align 4
-  store i32 0, ptr %1, align 4
-  store i32 1, ptr %2, align 4
-  %5 = load i32, ptr %2, align 4
-  %6 = icmp ne i32 %5, 0
-  br i1 %6, label %7, label %9
-
-7:
-  store i32 1, ptr %4, align 4
-  %8 = load i32, ptr %4, align 4
-  br label %10
-
-9:
-  br label %10
-
-10:
-  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
-  store i32 %11, ptr %3, align 4
-  %12 = load i32, ptr %3, align 4
-  ret i32 %12
-}
-```
-
-Encoded into the current AST representation, this becomes:
-```isabelle
-definition pmain :: "llvm_instruction_block" where
-  "pmain = ([
-    alloca ''1'' i32 (Some 4),
-    alloca ''2'' i32 (Some 4),
-    alloca ''3'' i32 (Some 4),
-    alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (ssa_val ''1'') (Some 4),
-    store i32 (val (vi32 1)) (ssa_val ''2'') (Some 4),
-    load ''5'' i32 (ssa_val ''2'') (Some 4),
-    icmp ''6'' False comp_ne i32 (ssa_val ''5'') (val (vi32 0))],
-    br_i1 (ssa_val ''6'') ''7'' ''9''
-  )"
-
-definition p7 :: "llvm_instruction_block" where
-  "p7 = ([
-    store i32 (val (vi32 1)) (ssa_val ''4'') (Some 4),
-    load ''8'' i32 (ssa_val ''4'') (Some 4)],
-    br_label ''10''
-  )"
-
-definition p9 :: "llvm_instruction_block" where
-  "p9 = ([],
-    br_label ''10''
-  )"
-
-definition p10 :: "llvm_instruction_block" where
-  "p10 = ([
-    phi ''11'' i32 [(''7'', ssa_val ''8''), (''9'', val (vi32 0))],
-    store i32 (ssa_val ''11'') (ssa_val ''3'') (Some 4),
-    load ''12'' i32 (ssa_val ''3'') (Some 4)],
-    ret i32 (ssa_val ''12'')
-  )"
-
-definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) pmain [(''7'', p7), (''9'', p9), (''10'', p10)]"
-```
-
-This can be executed as follows, which gives the proper return value:
-```isabelle
-value "execute_function empty_state phi_main"
-
-= "ok (Some (vi32 1))" :: "llvm_value option result"
-```
-
-
- Weakest precondition mechanics
-
-- Intro rules done for abstractions, some instructions
-
-*/

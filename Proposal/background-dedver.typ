@@ -5,8 +5,8 @@
 == Deductive Verification
 <sec-ded-ver>
 
-Deductive verification is a method to mathematically verify the correctness of programs based in pre- and post-conditions.
-There exist many different deductive verifiers for different languages and toolchains, based on mostly the same principles.
+Deductive verification is a method to mathematically verify that a concrete implementation of a program satisfies specified conditions.
+There exist many different deductive verifiers for different languages and toolchains, but they share the following foundational principles.
 
 
 === Hoare Triples
