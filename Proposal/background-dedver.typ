@@ -36,7 +36,7 @@ If this holds, then the post-condition states that the result will be the inputs
 
 To prove that a post-condition follows from the pre-conditions and the command, the semantic meaning of the command has to be described formally.
 Consider again the implementation of the `mult` function in @lst-mult-impl.
-To prove anything about this function, the prover needs to know what exact effects the instructions have on the execution state: how values of the `int` type behave, how assigning variables behaves, how different operations such as `++` and `+=` interact these values, and how control-flow is impacted by the `for`-loop and `return` keyword.
+To prove anything about this function, the prover needs to know what exact effects the instructions have on the execution state: how values of the `int` type behave, how assigning variables behaves, how different operations such as `++` and `+=` interact with these values, and how control-flow is impacted by the `for`-loop and `return` keyword.
 
 Once the prover knows the semantics of different instructions, it can assume the pre-conditions hold for the inputs and execute the instructions of a program symbolically, keeping track of how execution state and flow have been impacted thus far.
 When a return instruction is reached, the post-condition can be checked on the returned value and reached execution state.
@@ -89,20 +89,20 @@ int mult(int a, int b) {
 #fig([#diagram(
 	  node-stroke: 1pt,
     node((0, 1), align(left)[int result = 0; \ int i = 0;]),
-    node((0, 2), align(left)[result += a; \ i++;]),
-    node((0, 3), align(left)[i < b?], shape: diamond),
-    node((0, 4.5), align(left)[return result;]),
-
+    node((2, 2), align(left)[result += a; \ i++;]),
+    node((0, 2), align(left)[i < b], shape: diamond),
+    node((0, 3.5), align(left)[return result;]),
     edge((0,0), (0,1), "->", [`a` $*$ `b` $<$ $2^31$ \ `b` $>=$ $0$], label-side: left),
-    edge((0,1), (0,2), "->", [$0$ $<=$ `i` $<=$ `b` \ `result` $=$ `a` $*$ `i`], label-side: left),
-    edge((0,2), (0,3), "->"),
-    edge((0,3), (1,3), (1,2), (0,2), "->", [`i` $<$ `b` \ $0$ $<=$ `i` $<=$ `b` \ `result` $=$ `a` $*$ `i`], label-side: right),
-    edge((0,3), (0,4.5), "->", [`i` $>=$ `b` \ $0$ $<=$ `i` $<=$ `b` \ `result` $=$ `a` $*$ `i`], label-side: left)
+    edge((0,1), (0,2), "->"),
+    edge((0,2), (0,2.75), (2,2.75), (2,2), "->", [`i` $<$ `b` \ $0$ $<=$ `i` $<=$ `b` \ `result` $=$ `a` $*$ `i`], label-side: left),
+    edge((2,2), (2,1.5), (0,1.5), (0,2), "->"),
+    edge((0,2), (0,3.5), "->", align(right)[`i` $>=$ `b` \ $0$ $<=$ `i` $<=$ `b` \ `result` $=$ `a` $*$ `i`], label-side: right),
+    edge((0, 3.5), (0, 4.5), "->", [`result` $=$ `a` $*$ `b`], label-side: left)
   )],
   [Annotated `mult` Control Flow Graph]
 )<lst-mult-flow>
 
 With that, the goal of the deductive verification infrastructure is to:
-- allow users to specify pre-conditions per block of instructions with linear control-flow and a general post-condition,
+- allow users to specify pre-conditions for a set of instructions with linear control-flow and a general post-condition for functions,
 - allow for the symbolic execution of instruction blocks with some assumed conditions, obtaining the execution state,
 - allow proving that the pre-conditions of all consequent instruction blocks hold for some obtained execution state, or the post-condition in case the block returned some value.

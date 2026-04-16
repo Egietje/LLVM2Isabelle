@@ -3,16 +3,17 @@
 == Isabelle
 <sec-isabelle>
 
-Isabelle/HOL (referred to as just Isabelle from here) is an interactive theorem prover with higher-order logic features, allowing users to create and prove correct theorems consisting of lemmas.
-These lemmas can contain several assumptions, and define a single conclusion from the assumptions.
+Isabelle/HOL (referred to as just Isabelle from here) is an interactive theorem prover with higher-order logic features, allowing users to create and prove correct theories consisting of lemmas.
+These lemmas, representing singular theorems, can contain several assumptions, and define a single conclusion from the assumptions.
 Whenever a new lemma is defined using the keyword `lemma`, Isabelle prompts the user to prove one or more proof goals.
 With provided tools, the user is able to simplify, break up, rewrite, and eventually prove these goals (assuming they are correct).
-Once all proof goals have been proven, the lemma is added as correct to a theorem.
+Once all goals have been proven, the lemma is added as correct to the theory it is defined in and can be used in more complex proofs.
 
-Isabelle is also a functional, statically-typed language, allowing users to create functions that can then be used in lemmas.
+Isabelle is also a functional, statically-typed language, allowing users to create functions which they can then prove certain properties about in lemmas.
 Functions can have several parameters of specific types, and always produce a result of a single type.
 They can use pattern matching over the parameters to specify different function definitions depending on the input.
-Simple recursive functions created using the keyword `fun` are automatically proven to terminate, but some non-recursive functions created using the keyword `function` or `partial_function` require the user to prove they terminate.
+Simple recursive functions created using the keyword `fun` and are automatically proven to terminate, while functions created using the keyword `function` require the user to prove they terminate.
+It is possible to define functions that do not terminate with the keyword `partial_function`, which omits the need to prove termination.
 As an example, the `mult` function has been written in Isabelle as a recursive function over the second parameter in @lst-mult-isabelle.
 Here, the parameters are natural numbers, which are defined as zero, `0`, or recursively as the successor of another natural number, `Suc n`.
 If the second parameter is zero, then the result of the function is also zero, but if it is the successor of a natural number, `b`, the function recurses to `mult a b` (`a` being the first parameter) and adds `a` to that.

@@ -34,7 +34,7 @@ Furthermore, they might be analyzed using static analysis tools which help ident
 Both techniques are useful in their own right, but are not powerful enough to assert a program always works as intended.
 
 As stated previously, formal verification methods are required to assert whether a program is always correct.
-For example, model-checking can used to assert correctness for all possible states of an abstract model of the program.
+For example, model-checking can be used to assert correctness for all possible states of an abstract model of the program.
 While effective, this method is not very efficient.
 It requires the creation of a model, which itself has to be correct, as well as exploring all possible states of said model, which can quickly become infeasible as the model grows.
 For our example, this involves trying all possible values for `a` and `b` combined, yielding $2^64$ verification conditions.
@@ -44,7 +44,7 @@ It operates on an annotated version of the code of the program and proves correc
 Essentially, it boils down to symbolically executing the program, keeping track of how the execution state and control flow are impacted, and proving that the specified conditions hold for all possible execution states. 
 Note that this does not happen through exhaustively checking all possible execution states as with model checking, but rather using a single symbolic representation that contains all states.
 
-It is using this last method, deductive verification, that we will create a new verification tool in this thesis, as its formal mathematical basis allows for the most efficient and rigorous verification of the described approaches.
+We will create a new deductive verification tool in this thesis, as its formal mathematical basis allows for the most efficient and rigorous verification of the described approaches.
 To use this method, a target language has to be chosen for which the structure and semantics have to be formally defined.
 Furthermore, a formal back-end has to be chosen in which these definitions can be created and the deductive verification's proof system can be described.
 
@@ -59,8 +59,10 @@ In both cases, changing the language or architecture the verification is done wi
 
 In this thesis, we will target LLVM-IR.
 This language lives between a program's source-code and compilation target, being part of the LLVM compilation framework.
-It allows language-engineers to only target a single compilation representation, LLVM-IR, while supporting many different target architectures, including x86, ARM, and RISC-V.
-Furthermore, it allows developers working on new hardware targets to implement a single back-end for LLVM-IR, automatically enabling support for all languages that compile to it.
+One if its goals is to allow language-engineers to only target a single compilation representation, LLVM-IR, while supporting many different target architectures, including x86, ARM, and RISC-V.
+Another goal is to allow developers working on new hardware targets to implement a single back-end for LLVM-IR, automatically enabling support for all languages that compile to it.
+These goals has been mostly achieved, with some target-specific intrinsics and differences being present in LLVM-IR.
+Our tool will have to deal with these differences properly when encountered.
 As such, one does not write programs directly in LLVM-IR, but any supported language can be compiled to it.
 We can use this to our benefit: once functional, our tool will immediately support software written in a wide range of source languages and targeting many target architectures.
 
@@ -90,7 +92,7 @@ This can be achieved through the following sub-goals, producing a minimum viable
 On top of those main sub-goals, we have several extension goals:\
 `EG1` - _Extending the defined subset of LLVM-IR to support more of its features, instructions, and intrinsics, such as floating-point values or arrays._\
 `EG2.1` - _Creating a tool to port LLVM-IR output into the verifier's representation and vice versa._\
-`EG2.2` - _Verifying the importing and exporting is a fully lossless process._\
+`EG2.2` - _Verifying importing and exporting LLVM-IR is a fully lossless process._\
 `EG3` - _Extending the verifier to prove total correctness rather than partial correctness._\
 These extension goals are not strictly necessary to achieve the main research goal, but do enhance the functionality of the created tool.
 

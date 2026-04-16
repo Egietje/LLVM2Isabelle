@@ -13,7 +13,11 @@ A subset of LLVM-IR's structure and semantics have been defined in Isabelle.
 The chosen subset covers basic language features that allow simple programs, such as the `mult` function from @lst-mult-llvm, to be described and executed.
 Specifically, the structure of some instructions, basic blocks, functions, and programs have been defined, as well as their semantics.
 
-The structure has been defined using datatypes in the form of its AST.
+The structure has been defined as a deep embedding, using datatypes to represent its AST.
+This means that representing LLVM-IR using our representation requires a conversion, which a shallow embedding would not necessarily have required.
+However, this comes with the benefit of being more flexible in terms of what can be done with the embedded programs.
+A shallow embedding would have been more limited in the ways we could analyze, execute, and reason about embedded programs, which would have relied on built-in Isabelle features.
+
 For example, a datatype `llvm_instruction` has been defined which can be instantiated as any of the supported instructions with their specific options according to their definition in LLVM's language reference manual.
 Its definition is shown in @lst-instr-type.
 Such definitions have been made for types, typed values, identifiers, value references (either a direct value, or value from a register), alignment specifications, add wrap options, compare conditions,
@@ -116,16 +120,16 @@ Applying their respective weakest pre-condition lemmas combined with the consequ
 - `get_register`'s postcondition and proving its value is an address:\ `register_α s pointer = Some x ⟹ ∄xa. x = addr xa ⟹ False`
 - `get_memory`'s precondition following from `get_register`'s postcondition:\ `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa ≠ None`
 - `get_memory`'s precondition:\ `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa ≠ Some None`- `register_α s pointer = Some x ⟹ x = addr xa ⟹ memory_α s xa = Some (Some xb) ⟹ register_α xc = (register_α s)(reg name ↦ xb) ∧ memory_α xc = memory_α s ⟹ memory_α xc = memory_α s ∧ register_α xc = (register_α s)(reg name ↦ v)`\ (`get_register` and `get_memory`'s postconditions, with `execute_load`'s postcondition)
-All of these can be proven to hold given the assumptions, so `execute_load` has been proven to always execute correctly given these assumptions. Moreover, given successful execution, the postcondition has also been proven to hold for the returned state.
+All of these can be proved to hold given the assumptions, so `execute_load` has been proven to always execute correctly given these assumptions. Moreover, given successful execution, the postcondition has also been proven to hold for the returned state.
 
 The workings of these weakest preconditions are essentially the same as that of Hoare triples.
 The connection becomes clear with our weakest preconditions expressed as `P ⟹ wp c Q`, representing the Hoare triple `P c Q`.
-Because most literature is based on Hoare triples and being simpler to define, we have created a simple definition to specify weakest preconditions as Hoare triples.
-This unfolds `hoare P c Q` to the form `P = wp c Q`.
-Note that the definition, shown in @lst-hoare-def, adds a variable `x` to make `hoare` operate on `state`, while `wp` operates on `result`.
+Because most literature is based on Hoare triples and being simpler to define, we have created a simple definition to create Hoare triples in terms of weakest preconditions.
+This unfolds `hoare P c Q` to the form `P s ⟹ wp (c s) Q`, as shown in @lst-hoare-def.
+What this means intuitively, is that we assert that for all states that satisfy the precondition `P`, applying the command `c` to that state yields a new state that satisfies the postcondition `Q`.
 
 #fig(
-  ```isabelle definition "hoare P c Q ≡ (∀x. P x ⟶ wp (c x) Q)"```, [Hoare Triple Definition]
+  ```isabelle definition "hoare P c Q ≡ (∀s. P x ⟶ wp (c s) Q)"```, [Hoare Triple Definition]
 )<lst-hoare-def>
 
 With that, Hoare triples can be defined for the execution of basic blocks.

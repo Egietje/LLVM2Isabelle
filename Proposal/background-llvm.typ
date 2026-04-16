@@ -5,8 +5,8 @@
 
 LLVM is a toolkit for the construction of compilers, optimizers, and run-time environments.
 At its core is its own intermediate representation, LLVM-IR, a low-level programming language similar to assembly.
-It can be used to develop front-ends for any programming languages, and back-ends for any target architectures.
-Currently supports compiling many source languages, including C, C++, Haskell, and Rust, to a wide range of target architectures, including x86-64, ARM, and RISC-V.
+It can be used to develop front-ends for any programming language, and back-ends for any target architecture.
+Currently it supports compiling many source languages, including C, C++, Haskell, and Rust, to a wide range of target architectures, including x86-64, ARM, and RISC-V.
 
 
 === LLVM-IR Structure
@@ -15,7 +15,7 @@ Currently supports compiling many source languages, including C, C++, Haskell, a
 LLVM-IR is composed at the highest level of different modules, which themselves are made up of functions, global variables, and symbol table entries.
 The functions consist of an outer definition, including its parameters and return type, and inner basic blocks.
 These basic blocks are made up of a block label (which are local identifiers), followed by zero or more phi instructions, then some regular instructions, and finally one terminal instruction.
-Control-flow between basic blocks are determined only by these terminal instructions, as they either specify a local identifier to branch to, or return from the function.
+Control-flow between basic blocks is determined only by these terminal instructions, as they either specify a local identifier to branch to, or return from the function.
 The other instructions can only affect the outer control-flow by, for example, calling another function, but not the inner control-flow of the function being executed.
 
 LLVM-IR has two different ways of storing data: in registers, and in memory.
@@ -108,7 +108,7 @@ As the scope of the thesis increases to cover more instructions, this section wi
 
 The fact that LLVM-IR functions are already subdivided into basic blocks with straight-forward control-flow makes it ideal for graph-based deductive verification.
 Each basic block can only lead to one other predetermined basic block, or to one of two based on a boolean value, so constructing a control-flow graph is simple.
-With that, the biggest challenge for the design of the verifier is how to annotate basic blocks with pre-conditions and how to symbolically execute instructions from there, keeping track to register and memory state modifications.
+With that, the biggest challenge for the design of the verifier is how to annotate basic blocks with pre-conditions and how to symbolically execute instructions from there, keeping track of register and memory state modifications.
 
 
 ==== Phi Instructions
@@ -120,8 +120,8 @@ As such, it allows for a conditional register assignment which is a valid SSA-va
 
 ==== Regular Instructions
 
-`alloca` instructions allocates memory on the stack frame of the current function, which is released automatically when the function returns.
-They yield an address space which is stored in the register `<result>`.
+`alloca` instructions allocate memory on the stack frame of the current function, which is released automatically when the function returns.
+They yield a pointer to the newly allocated memory, which is stored in the register `<result>`.
 
 `store` instructions store a value (from a register or a constant value) at some memory address from a pointer (e.g. an address space in a register, as return by `alloca`).
 It does not yield any value.
