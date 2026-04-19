@@ -16,7 +16,7 @@ lemma wp_case_value_addr_intro[wp_intro]:
 
 section "Memory instructions"
 
-definition execute_alloca :: "llvm_register_name \<Rightarrow> state \<Rightarrow> state result" where
+definition execute_alloca :: "llvm_identifier \<Rightarrow> state \<Rightarrow> state result" where
   "execute_alloca name s = do {
       (s', a) \<leftarrow> return (allocate_stack s);
       return (set_register name (addr a) s')
@@ -60,7 +60,7 @@ lemma store_wp_intro[THEN consequence, wp_intro]:
   by (intro wp_intro; auto)
 
 
-definition execute_load :: "llvm_register_name \<Rightarrow> llvm_pointer \<Rightarrow> state \<Rightarrow> state result" where
+definition execute_load :: "llvm_identifier \<Rightarrow> llvm_pointer \<Rightarrow> state \<Rightarrow> state result" where
   "execute_load n p s = do {
     a \<leftarrow> get_address_from_pointer s p;
     v \<leftarrow> get_memory s a;
@@ -133,7 +133,7 @@ fun add_values :: "llvm_add_wrap \<Rightarrow> llvm_value \<Rightarrow> llvm_val
 | "add_values _ _ _ = err incompatible_types"
 
 
-definition execute_add :: "llvm_register_name \<Rightarrow> llvm_add_wrap \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
+definition execute_add :: "llvm_identifier \<Rightarrow> llvm_add_wrap \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
   "execute_add name wrap v1 v2 s = do {
     v1' \<leftarrow> get_register s v1;
     v2' \<leftarrow> get_register s v2;
@@ -201,7 +201,7 @@ fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition 
 | "compare_values_sign True c (vi64 a) (vi64 b) = (if same_signs64 a b then compare_values c (vi64 a) (vi64 b) else ok poison)"
 | "compare_values_sign True c _ _ = err incompatible_types"
 
-definition execute_icmp :: "llvm_register_name \<Rightarrow> llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
+definition execute_icmp :: "llvm_identifier \<Rightarrow> llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
   "execute_icmp name same_sign cond v1 v2 s = do {
     v1' \<leftarrow> get_register s v1;
     v2' \<leftarrow> get_register s v2;
@@ -249,5 +249,7 @@ lemma [wp_intro]: "wp (execute_add name wrap v1 v2 s) Q \<Longrightarrow> wp (ex
   by simp
 lemma [wp_intro]: "wp (execute_icmp name same_sign cond v1 v2 s) Q \<Longrightarrow> wp (execute_instruction (icmp name same_sign cond type v1 v2) s) Q"
   by simp
+
+definition "wp_instr i Q s \<equiv> wp (execute_instruction i s) Q"
 
 end

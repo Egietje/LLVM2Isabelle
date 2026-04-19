@@ -6,45 +6,45 @@ section "Simple Branching"
 
 definition sbmain :: "llvm_instruction_block" where
   "sbmain = ([],[
-    alloca ''1'' i32 (Some 4),
-    alloca ''2'' i32 (Some 4),
-    alloca ''3'' i32 (Some 4),
-    alloca ''4'' i32 (Some 4),
-    alloca ''5'' i32 (Some 4),
-    store i32 (val (vi32 0)) (reg ''1'') (Some 4),
-    store i32 (val (vi32 1)) (reg ''2'') (Some 4),
-    store i32 (val (vi32 2)) (reg ''3'') (Some 4),
-    load ''6'' i32 (reg ''2'') (Some 4),
-    add ''7'' add_nsw i32 (reg ''6'') (val (vi32 1)),
-    load ''8'' i32 (reg ''3'') (Some 4),
-    icmp ''9'' False comp_eq i32 (reg ''7'') (reg ''8'')],
-    br_i1 (reg ''9'') ''10'' ''12''
+    alloca (lid ''1'') i32 (Some 4),
+    alloca (lid ''2'') i32 (Some 4),
+    alloca (lid ''3'') i32 (Some 4),
+    alloca (lid ''4'') i32 (Some 4),
+    alloca (lid ''5'') i32 (Some 4),
+    store i32 (val (vi32 0)) (reg (lid ''1'')) (Some 4),
+    store i32 (val (vi32 1)) (reg (lid ''2'')) (Some 4),
+    store i32 (val (vi32 2)) (reg (lid ''3'')) (Some 4),
+    load (lid ''6'') i32 (reg (lid ''2'')) (Some 4),
+    add (lid ''7'') add_nsw i32 (reg (lid ''6'')) (val (vi32 1)),
+    load (lid ''8'') i32 (reg (lid ''3'')) (Some 4),
+    icmp (lid ''9'') False comp_eq i32 (reg (lid ''7'')) (reg (lid ''8''))],
+    br_i1 (reg (lid ''9'')) (lid ''10'') (lid ''12'')
   )"
 
 definition sb10 :: "llvm_instruction_block" where
   "sb10 = ([],[
-    store i32 (val (vi32 3)) (reg ''4'') (Some 4),
-    load ''11'' i32 (reg ''4'') (Some 4),
-    store i32 (reg ''11'') (reg ''3'') (Some 4)],
-    br_label ''14''
+    store i32 (val (vi32 3)) (reg (lid ''4'')) (Some 4),
+    load (lid ''11'') i32 (reg (lid ''4'')) (Some 4),
+    store i32 (reg (lid ''11'')) (reg (lid ''3'')) (Some 4)],
+    br_label (lid ''14'')
   )"
 
 definition sb12 :: "llvm_instruction_block" where
   "sb12 = ([],[
-    store i32 (val (vi32 4)) (reg ''5'') (Some 4),
-    load ''13'' i32 (reg ''5'') (Some 4),
-    store i32 (reg ''13'') (reg ''3'') (Some 4)],
-    br_label ''14''
+    store i32 (val (vi32 4)) (reg (lid ''5'')) (Some 4),
+    load (lid ''13'') i32 (reg (lid ''5'')) (Some 4),
+    store i32 (reg (lid ''13'')) (reg (lid ''3'')) (Some 4)],
+    br_label (lid ''14'')
   )"
 
 definition sb14 :: "llvm_instruction_block" where
   "sb14 = ([],[
-    load ''15'' i32 (reg ''3'') (Some 4)],
-    ret i32 (reg ''15'')
+    load (lid ''15'') i32 (reg (lid ''3'')) (Some 4)],
+    ret i32 (reg (lid ''15''))
   )"
 
 definition simple_branching_main :: "llvm_function" where
-  "simple_branching_main = func (func_def ''main'' i32) [(''main'', sbmain), (''10'', sb10), (''12'', sb12), (''14'', sb14)]"
+  "simple_branching_main = func (func_def ''main'' i32) [(lid ''main'', sbmain), (lid ''10'', sb10), (lid ''12'', sb12), (lid ''14'', sb14)]"
 
 value "execute_function simple_branching_main empty_state"
 
@@ -53,7 +53,7 @@ lemma "verify_function (annotated
       simple_branching_main
 
       [
-        (''14'', (\<lambda>s. \<exists>a v. register_\<alpha> s (reg ''3'') = Some (addr a) \<and> memory_\<alpha> s a = Some (Some (vi32 v)) \<and> (v = 4 \<or> v = 3)))
+        (lid ''14'', (\<lambda>s. \<exists>a v. register_\<alpha> s (reg (lid ''3'')) = Some (addr a) \<and> memory_\<alpha> s a = Some (Some (vi32 v)) \<and> (v = 4 \<or> v = 3)))
       ]
 
       (\<lambda>(v', s'). v' = vi32 3 \<or> v' = vi32 4)
@@ -65,48 +65,48 @@ section "Phi Node"
 
 definition pmain :: "llvm_instruction_block" where
   "pmain = ([],[
-    alloca ''1'' i32 (Some 4),
-    alloca ''2'' i32 (Some 4),
-    alloca ''3'' i32 (Some 4),
-    alloca ''4'' i32 (Some 4),
-    store i32 (val (vi32 0)) (reg ''1'') (Some 4),
-    store i32 (val (vi32 1)) (reg ''2'') (Some 4),
-    load ''5'' i32 (reg ''2'') (Some 4),
-    icmp ''6'' False comp_ne i32 (reg ''5'') (val (vi32 0))],
-    br_i1 (reg ''6'') ''7'' ''9''
+    alloca (lid ''1'') i32 (Some 4),
+    alloca (lid ''2'') i32 (Some 4),
+    alloca (lid ''3'') i32 (Some 4),
+    alloca (lid ''4'') i32 (Some 4),
+    store i32 (val (vi32 0)) (reg (lid ''1'')) (Some 4),
+    store i32 (val (vi32 1)) (reg (lid ''2'')) (Some 4),
+    load (lid ''5'') i32 (reg (lid ''2'')) (Some 4),
+    icmp (lid ''6'') False comp_ne i32 (reg (lid ''5'')) (val (vi32 0))],
+    br_i1 (reg (lid ''6'')) (lid ''7'') (lid ''9'')
   )"
 
 definition p7 :: "llvm_instruction_block" where
   "p7 = ([],[
-    store i32 (val (vi32 1)) (reg ''4'') (Some 4),
-    load ''8'' i32 (reg ''4'') (Some 4)],
-    br_label ''10''
+    store i32 (val (vi32 1)) (reg (lid ''4'')) (Some 4),
+    load (lid ''8'') i32 (reg (lid ''4'')) (Some 4)],
+    br_label (lid ''10'')
   )"
 
 definition p9 :: "llvm_instruction_block" where
   "p9 = ([],[],
-    br_label ''10''
+    br_label (lid ''10'')
   )"
 
 definition p10 :: "llvm_instruction_block" where
-  "p10 = ([phi ''11'' i32 [(''7'', reg ''8''), (''9'', val (vi32 0))]],[
-    store i32 (reg ''11'') (reg ''3'') (Some 4),
-    load ''12'' i32 (reg ''3'') (Some 4)],
-    ret i32 (reg ''12'')
+  "p10 = ([phi (lid ''11'') i32 [(lid ''7'', reg (lid ''8'')), (lid ''9'', val (vi32 0))]],[
+    store i32 (reg (lid ''11'')) (reg (lid ''3'')) (Some 4),
+    load (lid ''12'') i32 (reg (lid ''3'')) (Some 4)],
+    ret i32 (reg (lid ''12''))
   )"
 
 definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) [(''main'', pmain), (''7'', p7), (''9'', p9), (''10'', p10)]"
+  "phi_main = func (func_def ''main'' i32) [(lid ''main'', pmain), (lid ''7'', p7), (lid ''9'', p9), (lid ''10'', p10)]"
 
 
 lemma "verify_function (annotated
     phi_main
 
     [
-      (''10'',  (\<lambda>s. \<exists>v a3. register_\<alpha> s (reg ''8'') = Some v \<and> register_\<alpha> s (reg ''3'') = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None))
+      (lid ''10'',  (\<lambda>s. \<exists>v a3. register_\<alpha> s (reg (lid ''8'')) = Some v \<and> register_\<alpha> s (reg (lid ''3'')) = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None))
     ]
 
-    (\<lambda>(v, s). v = (the (register_\<alpha> s (reg ''8''))) \<or> v = vi32 0)
+    (\<lambda>(v, s). v = (the (register_\<alpha> s (reg (lid ''8'')))) \<or> v = vi32 0)
   )"
   unfolding phi_main_def pmain_def p7_def p9_def p10_def
   by vcg
@@ -156,22 +156,23 @@ definition mult_entry :: "llvm_instruction_block" where
   "mult_entry = (
     [],
     [
-      alloca ''a.addr'' i32 (Some 4),
-      alloca ''b.addr'' i32 (Some 4),
-      alloca ''result'' i32 (Some 4),
-      alloca ''i'' i32 (Some 4),
-      store i32 (reg ''a'') (reg ''a.addr'') (Some 4),
-      store i32 (reg ''b'') (reg ''b.addr'') (Some 4),
-      store i32 (val (vi32 0)) (reg ''result'') (Some 4),
-      store i32 (val (vi32 0)) (reg ''i'') (Some 4)
+      alloca (lid ''a.addr'') i32 (Some 4),
+      alloca (lid ''b.addr'') i32 (Some 4),
+      alloca (lid ''result'') i32 (Some 4),
+      alloca (lid ''i'') i32 (Some 4),
+      store i32 (reg (lid ''a'')) (reg (lid ''a.addr'')) (Some 4),
+      store i32 (reg (lid ''b'')) (reg (lid ''b.addr'')) (Some 4),
+      store i32 (val (vi32 0)) (reg (lid ''result'')) (Some 4),
+      store i32 (val (vi32 0)) (reg (lid ''i'')) (Some 4)
     ],
-    br_label ''for.cond''
+    br_label (lid ''for.cond'')
   )"
+
 
 definition mult_entry_pre where
   "mult_entry_pre = (\<lambda>s. \<exists>a b.
-    register_\<alpha> s (reg ''a'') = (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b'') = (Some (vi32 b))
+    register_contains_value (lid ''a'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> - (2 ^ 31) \<le>s a * b
   \<and> a * b <s 2 ^ 31
   \<and> 0 <s b
@@ -195,11 +196,11 @@ definition mult_cond :: "llvm_instruction_block" where
   "mult_cond = (
     [],
     [
-      load ''0'' i32 (reg ''i'') (Some 4),
-      load ''1'' i32 (reg ''b.addr'') (Some 4),
-      icmp ''cmp'' False comp_slt i32 (reg ''0'') (reg ''1'')
+      load (lid ''0'') i32 (reg (lid ''i'')) (Some 4),
+      load (lid ''1'') i32 (reg (lid ''b.addr'')) (Some 4),
+      icmp (lid ''cmp'') False comp_slt i32 (reg (lid ''0'')) (reg (lid ''1''))
     ],
-    br_i1 (reg ''cmp'') ''for.body'' ''for.end''
+    br_i1 (reg (lid ''cmp'')) (lid ''for.body'') (lid ''for.end'')
   )"
 
 (*
@@ -215,34 +216,29 @@ definition mult_body :: "llvm_instruction_block" where
   "mult_body = (
     [],
     [
-      load ''2'' i32 (reg ''a.addr'') (Some 4),
-      load ''3'' i32 (reg ''result'') (Some 4),
-      add ''add'' add_nsw i32 (reg ''3'') (reg ''2''),
-      store i32 (reg ''add'') (reg ''result'') (Some 4)
+      load (lid ''2'') i32 (reg (lid ''a.addr'')) (Some 4),
+      load (lid ''3'') i32 (reg (lid ''result'')) (Some 4),
+      add (lid ''add'') add_nsw i32 (reg (lid ''3'')) (reg (lid ''2'')),
+      store i32 (reg (lid ''add'')) (reg (lid ''result'')) (Some 4)
     ],
-    br_label ''for.inc''
+    br_label (lid ''for.inc'')
   )"
 
 definition mult_body_pre where
-  "mult_body_pre = (\<lambda>s. \<exists>aa a ab b ai i ar.
-    register_\<alpha> s (reg ''a'') = (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b'') = (Some (vi32 b))
-  \<and> register_\<alpha> s (reg ''a.addr'') = Some (addr aa) \<and> memory_\<alpha> s aa = Some (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b.addr'') = Some (addr ab) \<and> memory_\<alpha> s ab = Some (Some (vi32 b))
-  \<and> register_\<alpha> s (reg ''i'') = Some (addr ai) \<and> memory_\<alpha> s ai = Some (Some (vi32 i))
-  \<and> register_\<alpha> s (reg ''result'') = Some (addr ar) \<and> memory_\<alpha> s ar = Some (Some (vi32 (a * i)))
+  "mult_body_pre = (\<lambda>s. \<exists>a b i.
+    register_contains_value (lid ''a'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 a) s
+  \<and> register_contains_address_with_value (lid ''a.addr'') (vi32 a) s
+  \<and> register_contains_address_with_value (lid ''b.addr'') (vi32 b) s
+  \<and> register_contains_address_with_value (lid ''i'') (vi32 i) s
+  \<and> register_contains_address_with_value (lid ''result'') (vi32 (a * i)) s
+  \<and> registers_contain_unique_addresses [lid ''a.addr'', lid ''b.addr'', lid ''i'', lid ''result''] s
   \<and> - (2 ^ 31) \<le>s a * b
   \<and> a * b <s 2 ^ 31
   \<and> 0 <s b
   \<and> 0 \<le>s i
   \<and> i <s b
   \<and> i <s 2 ^ 31 - 1
-  \<and> aa \<noteq> ab
-  \<and> aa \<noteq> ai
-  \<and> aa \<noteq> ar
-  \<and> ab \<noteq> ai
-  \<and> ab \<noteq> ar
-  \<and> ai \<noteq> ar
   )"
 
 (*
@@ -259,11 +255,11 @@ definition mult_inc :: "llvm_instruction_block" where
   "mult_inc = (
     [],
     [
-      load ''4'' i32 (reg ''i'') (Some 4),
-      add ''inc'' add_nsw i32 (reg ''4'') (val (vi32 1)),
-      store i32 (reg ''inc'') (reg ''i'') (Some 4)
+      load (lid ''4'') i32 (reg (lid ''i'')) (Some 4),
+      add (lid ''inc'') add_nsw i32 (reg (lid ''4'')) (val (vi32 1)),
+      store i32 (reg (lid ''inc'')) (reg (lid ''i'')) (Some 4)
     ],
-    br_label ''for.cond''
+    br_label (lid ''for.cond'')
   )"
 
 
@@ -280,35 +276,30 @@ definition mult_end :: "llvm_instruction_block" where
   "mult_end = (
     [],
     [
-      load ''5'' i32 (reg ''result'') (Some 4)
+      load (lid ''5'') i32 (reg (lid ''result'')) (Some 4)
     ],
-    ret i32 (reg ''5'')
+    ret i32 (reg (lid ''5''))
   )"
 
 definition mult_end_pre where
-  "mult_end_pre = (\<lambda>s. \<exists>aa a ab b ai i ar.
-    register_\<alpha> s (reg ''a'') = (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b'') = (Some (vi32 b))
-  \<and> register_\<alpha> s (reg ''a.addr'') = Some (addr aa) \<and> memory_\<alpha> s aa = Some (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b.addr'') = Some (addr ab) \<and> memory_\<alpha> s ab = Some (Some (vi32 b))
-  \<and> register_\<alpha> s (reg ''i'') = Some (addr ai) \<and> memory_\<alpha> s ai = Some (Some (vi32 i))
-  \<and> register_\<alpha> s (reg ''result'') = Some (addr ar) \<and> memory_\<alpha> s ar = Some (Some (vi32 (a * i)))
+  "mult_end_pre = (\<lambda>s. \<exists>a b i.
+    register_contains_value (lid ''a'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 a) s
+  \<and> register_contains_address_with_value (lid ''a.addr'') (vi32 a) s
+  \<and> register_contains_address_with_value (lid ''b.addr'') (vi32 b) s
+  \<and> register_contains_address_with_value (lid ''i'') (vi32 i) s
+  \<and> register_contains_address_with_value (lid ''result'') (vi32 (a * i)) s
+  \<and> registers_contain_unique_addresses [lid ''a.addr'', lid ''b.addr'', lid ''i'', lid ''result''] s
   \<and> - (2 ^ 31) \<le>s a * b
   \<and> a * b <s 2 ^ 31
   \<and> 0 <s b
   \<and> i = b
-  \<and> aa \<noteq> ab
-  \<and> aa \<noteq> ai
-  \<and> aa \<noteq> ar
-  \<and> ab \<noteq> ai
-  \<and> ab \<noteq> ar
-  \<and> ai \<noteq> ar
   )"
 
 definition mult_post where
   "mult_post = (\<lambda>(r, s). \<exists>a b.
-    register_\<alpha> s (reg ''a'') = (Some (vi32 a))
-  \<and> register_\<alpha> s (reg ''b'') = (Some (vi32 b))
+    register_contains_value (lid ''a'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 a) s
   \<and> r = vi32 (a * b)
   )"
 
@@ -323,11 +314,11 @@ definition mult_function :: llvm_function where
   "mult_function = (func
     (func_def ''mult'' i32) 
     [
-      (''entry'',    mult_entry),
-      (''for.cond'', mult_cond),
-      (''for.body'', mult_body),
-      (''for.inc'',  mult_inc),
-      (''for.end'',  mult_end)
+      (lid ''entry'',    mult_entry),
+      (lid ''for.cond'', mult_cond),
+      (lid ''for.body'', mult_body),
+      (lid ''for.inc'',  mult_inc),
+      (lid ''for.end'',  mult_end)
     ]
   )"
 
@@ -335,9 +326,9 @@ definition mult_annotated :: annotated_function where
   "mult_annotated = annotated
     mult_function
     [
-      (''entry'', mult_entry_pre),
-      (''for.body'', mult_body_pre),
-      (''for.end'', mult_end_pre)
+      (lid ''entry'', mult_entry_pre),
+      (lid ''for.body'', mult_body_pre),
+      (lid ''for.end'', mult_end_pre)
     ]
     mult_post"
 
@@ -345,6 +336,175 @@ definition mult_annotated :: annotated_function where
 lemma "verify_function mult_annotated"
   unfolding mult_annotated_def mult_function_def mult_entry_def mult_cond_def mult_body_def mult_inc_def mult_end_def mult_entry_pre_def mult_body_pre_def mult_end_pre_def mult_post_def
   by vcg
+
+                 
+lemma "verify_function mult_annotated"
+  unfolding mult_annotated_def mult_function_def mult_entry_def mult_cond_def mult_body_def mult_inc_def mult_end_def mult_entry_pre_def mult_body_pre_def mult_end_pre_def mult_post_def
+  apply vcg_step (* split into annotated branch-points with proper previous block: entry, for.cond \<rightarrow> for.body, for.cond \<rightarrow> for.end *)
+  apply vcg_step (* turn into hoare triple *)
+  apply vcg_step (* hoare triple of single block with complex post-condition *)
+  apply vcg_step (* wp with pre-condition as assumption *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* finish block execution, branch *)
+  apply vcg_step (* case distinction *)
+  apply vcg_step (* branched to basic block without annotation \<rightarrow> new hoare triple *)
+  apply vcg_step (* hoare triple of single block w/ complex post-condition*)
+  apply vcg_step (* wp... *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* end of block, branch based on boolean*)
+  apply vcg_step (* case distinction *)
+  apply vcg_step (* branched on boolean, undeterminate, so we get extra subgoal for each case: 0 <s a and \<not>0 <s a *)
+  (* first subgoal assumes 0 <s a, in which case we branch to for.body, which has a pre-condition we can prove *)
+  apply vcg_step (* second subgoal assumed \<not>0 <s a, branch to for.end, which also has a pre-condition we can prove*)
+  apply vcg_step (* _all_ executions starting from block entry with its pre-condition holding have been proven*)
+  (*continue with execution from for.body*)
+  apply vcg_step (* hoare triple with the pre-condition of for.body, executing starting from for.body, with for.cond as previous block *)
+  apply vcg_step (* hoare of single block *)
+  apply vcg_step (* wp *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* end of block, unconditional branch to for.inc *)
+  apply vcg_step (* cases *)
+  apply vcg_step (* for.inc has no pre-cond \<rightarrow> new hoare triple *)
+  apply vcg_step (* hoare over single block *)
+  apply vcg_step (* wp... *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* end of block, unconditional branch to for.cond *)
+  apply vcg_step (* cases *)
+  apply vcg_step (* for.cond has no pre-cond \<rightarrow> new hoare triple *)
+  apply vcg_step (* hoare over single block *)
+  apply vcg_step (* wp... *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* conditional branch to for.body or for.end depending on i+1 <s b *)
+  apply vcg_step
+  apply vcg_step (* new subgoals, one assumes i+1 <s b, branch to for.body which has pre-condition to prove *)
+  apply vcg_step (* other assumes \<not>i+1 <s b, branch to for.end, pre-condition to prove *)
+  apply vcg_step (* again, all executions starting from for.body have been proven to satisfy all following pre-conditions*)
+  (* only execution from for.end remains *)
+  apply vcg_step (* hoare triple from for.end with its pre-cond *)
+  apply vcg_step (* hoare over single block *)
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step (* end of block, return value from reg %5*)
+  apply vcg_step (* cases *)
+  apply vcg_step (* return val, so show the post-condition of the function holds for that value *)
+  apply vcg_step (* done! all possible executions satisfying the pre-condition of the function have been verified *)
+  done
+
+lemma "verify_function mult_annotated"
+  unfolding mult_annotated_def mult_function_def 
+  apply vcg_step apply simp
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step unfolding mult_entry_pre_def
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step apply simp unfolding register_contains_value_def
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step unfolding mult_body_pre_def
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
+  apply vcg_step
 
 (*
 1 define dso_local noundef i32 @mult(int, int)(i32 noundef %a, i32 noundef %b) { llvm

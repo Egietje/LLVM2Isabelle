@@ -4,14 +4,14 @@ begin
 
 section "Phi nodes"
 
-fun phi_lookup :: "llvm_label option \<Rightarrow> (llvm_label * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
+fun phi_lookup :: "llvm_identifier option \<Rightarrow> (llvm_identifier * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
   "phi_lookup l ls = do {
     prev \<leftarrow> some_or_err l phi_no_previous_block;
     assert phi_label_not_distinct (distinct (map fst ls));
     some_or_err (map_of ls prev) phi_label_not_found
   }"
 
-definition execute_phi :: "llvm_label option \<Rightarrow> llvm_register_name \<Rightarrow> (llvm_label * llvm_value_ref) list \<Rightarrow> state \<Rightarrow> state result" where
+definition execute_phi :: "llvm_identifier option \<Rightarrow> llvm_identifier \<Rightarrow> (llvm_identifier * llvm_value_ref) list \<Rightarrow> state \<Rightarrow> state result" where
   "execute_phi prev name values s = do {
     v \<leftarrow> phi_lookup prev values;
     v' \<leftarrow> get_register s v;
@@ -27,11 +27,24 @@ lemma phi_wp_intro[THEN consequence, wp_intro]:
   using assms
   apply (intro wp_intro; auto) done
 
+print_theorems 
+
+definition "wp_phi prev name values Q s \<equiv> wp (execute_phi prev name values s) Q"
+
+lemma wp_phi_intro:
+  assumes "distinct (map fst values)"
+  assumes "p = Some p'" "map_of values p' = Some v" "register_\<alpha> s v = Some v'"
+  assumes "\<And>s'. register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s \<Longrightarrow> Q s'"
+  shows "wp_phi p name values Q s"
+  unfolding wp_phi_def
+  using assms
+  by (intro wp_intro; auto)
+
 
 
 section "Single block"
 
-fun execute_block :: "llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> state \<Rightarrow> (state * llvm_block_return) result" where
+fun execute_block :: "llvm_identifier option \<Rightarrow> llvm_instruction_block \<Rightarrow> state \<Rightarrow> (state * llvm_block_return) result" where
   "execute_block previous ((phi name type values)#ps, is, t) s = do {
     s' \<leftarrow> execute_phi previous name values s;
     execute_block previous (ps, is, t) s'
@@ -50,6 +63,49 @@ fun execute_block :: "llvm_label option \<Rightarrow> llvm_instruction_block \<R
     res \<leftarrow> get_register s v;
     return (s, return_value res)
   }"
+
+definition "wp_block prev block Q s \<equiv> wp (execute_block prev block s) Q"
+named_theorems wp_block_intro
+
+lemma wp_block_phi_intro[wp_block_intro]:
+  assumes "wp_phi prev name values (\<lambda>s'. wp_block prev (ps, is, t) Q s') s"
+  shows "wp_block prev ((phi name type values)#ps, is, t) Q s"
+  using assms
+  unfolding wp_block_def wp_phi_def
+  apply simp apply (rule wp_intro) by simp
+
+lemma wp_block_instr_intro[wp_block_intro]:
+  assumes "wp_instr i (\<lambda>s'. wp_block prev ([], is, t) Q s') s"
+  shows "wp_block prev ([], i#is, t) Q s"
+  using assms
+  unfolding wp_block_def wp_instr_def
+  apply simp apply (rule wp_intro) by simp
+
+lemma wp_block_br_i1_intro[wp_block_intro]:
+  assumes "register_\<alpha> s value = Some (vi1 b)"
+  and "if b then Q (s, branch_label l1) else Q (s, branch_label l2)"
+  shows "wp_block prev ([], [], br_i1 value l1 l2) Q s"
+  using assms
+  unfolding wp_block_def
+  by (simp, intro wp_intro, auto; intro wp_intro wp_return_intro; simp)
+
+lemma wp_block_br_label_intro[wp_block_intro]:
+  assumes "Q (s, branch_label l)"
+  shows "wp_block prev ([], [], br_label l) Q s"
+  using assms
+  unfolding wp_block_def
+  by (simp add: wp_return_intro)
+
+lemma wp_block_ret_intro[wp_block_intro]:
+  assumes "register_\<alpha> s value = Some v"
+  and "Q (s, return_value v)"
+  shows "wp_block prev ([], [], ret type value) Q s"
+  using assms
+  unfolding wp_block_def
+  by (simp; intro wp_intro wp_return_intro; simp)
+
+
+
 
 lemma block_phi_wp_intro[wp_intro]:
   assumes "wp (execute_phi p name values s) (\<lambda>s'. wp (execute_block p (ps, is, t) s') Q)"
@@ -80,31 +136,147 @@ lemma block_br_i1_wp_intro[THEN consequence, wp_intro]:
   by (auto; intro wp_intro; auto; intro wp_intro wp_return_intro; auto)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 section "Multiple blocks"
 
-partial_function (tailrec) execute_blocks :: "llvm_label option \<Rightarrow> llvm_label option \<Rightarrow> llvm_instruction_block \<Rightarrow> llvm_labeled_blocks \<Rightarrow> state \<Rightarrow> (state * llvm_value option) result" where
-  "execute_blocks previous current block labeled_blocks state =
-    (case execute_block previous block state of
-      err e \<Rightarrow> err e
-    | ok (s', br) \<Rightarrow>
-      (case br of
-        return_value v \<Rightarrow> ok (s', Some v)
-      | branch_label l \<Rightarrow>
-        (case map_of labeled_blocks l of
-          None \<Rightarrow> err unknown_label
-        | Some b' \<Rightarrow> execute_blocks current (Some l) b' labeled_blocks s'
+partial_function (tailrec) execute_blocks :: "llvm_identifier option \<Rightarrow> llvm_identifier \<Rightarrow> llvm_labeled_blocks \<Rightarrow> state \<Rightarrow> (state * llvm_value option) result" where
+  "execute_blocks prev label blocks state =
+    (case map_of blocks label of
+      None \<Rightarrow> err unknown_label
+    | Some block \<Rightarrow>
+      (case execute_block prev block state of
+        err e \<Rightarrow> err e
+      | ok (s', br) \<Rightarrow>
+        (case br of
+          return_value v \<Rightarrow> ok (s', Some v)
+        | branch_label l \<Rightarrow> execute_blocks (Some label) l blocks s'
         )
       )
     )"
 
+
+definition "wp_blocks prev label blocks Q s = wp (execute_blocks prev label blocks s) Q"
+
+lemma wp_blocks_intro:
+  assumes "map_of blocks label = Some block"
+  assumes "wp_block prev block (\<lambda>(s',r). case r of
+    branch_label l \<Rightarrow> wp_blocks (Some label) l blocks Q s'
+  | return_value v \<Rightarrow> Q (s', Some v)) s"
+  shows "wp_blocks prev label blocks Q s"
+  using assms
+  unfolding wp_blocks_def wp_block_def
+  apply (simp add: execute_blocks.simps)
+  apply (cases "execute_block prev block s"; simp)
+  subgoal for x apply (cases x; simp)
+    subgoal for s' r apply (cases r; simp)
+       apply (intro wp_intro) unfolding wp_gen_def apply simp apply simp subgoal for l' apply (cases "map_of blocks l'") apply simp subgoal for block apply (cases "execute_block (Some label) block s'"; simp add: execute_blocks.simps)
+          done done done done unfolding wp_gen_def by simp
+
 lemmas [code] = execute_blocks.simps
 
-fun execute_function :: "llvm_function \<Rightarrow> state \<Rightarrow> (llvm_value option) result" where
-  "execute_function (func _ ((l,b)#ls)) s = do {
-    (_, r) \<leftarrow> execute_blocks None None b ls s;
-    return r
-  }"
-| "execute_function _ _ = ok None"
+fun execute_function :: "llvm_function \<Rightarrow> state \<Rightarrow> (state * llvm_value option) result" where
+  "execute_function (func _ ((l,b)#ls)) s = execute_blocks None l ((l,b)#ls) s"
+| "execute_function _ s = ok (s, None)"
+
+
+
+datatype (discs_sels) blocks_state = 
+    is_berr: berr 
+    | bret (state: state) (ret_value: "llvm_value option") 
+    | bbranch (state: state) "llvm_identifier option" "llvm_identifier"
+
+
+context fixes program :: "llvm_function"
+begin
+
+fun branch_step :: "blocks_state \<Rightarrow> blocks_state" where
+  "branch_step (berr) = berr"
+| "branch_step (bret s v) = bret s v"
+| "branch_step (bbranch s prev lab) = ((case map_of (llvm_function.blocks program) lab of 
+        None \<Rightarrow> berr 
+      | Some block \<Rightarrow> (case execute_block prev block s of 
+          err _ \<Rightarrow> berr 
+        | ok (s', return_value v) \<Rightarrow> bret s' (Some v)
+        | ok (s', branch_label l) \<Rightarrow> bbranch s' (Some lab) l))
+  )"
+
+definition "step s s' \<equiv> is_bbranch s \<and> s' = branch_step s"
+
+
+definition "terminal_state s \<equiv> \<nexists>s'. step s s'"
+
+lemma terminal_state_simps[simp]: 
+  "terminal_state berr"
+  "terminal_state (bret s v)"
+  "\<not>terminal_state (bbranch s prev lab)"
+  unfolding terminal_state_def step_def
+  by (auto)
+
+lemma terminal_steps_refl[simp]: "terminal_state s \<Longrightarrow> step\<^sup>*\<^sup>* s s' \<longleftrightarrow> s'=s"
+  unfolding terminal_state_def
+  by (auto elim: converse_rtranclpE)
+
+lemma terminal_non_err[simp]: "terminal_state s \<and> \<not>is_berr s \<longleftrightarrow> is_bret s"
+  by (cases s; auto)
+
+definition "wp_prog s Q \<equiv> \<forall>s'. step\<^sup>*\<^sup>* s s' \<and> terminal_state s' \<longrightarrow> \<not>is_berr s' \<and> Q (ret_value s') (state s') "
+
+
+lemma step_eq_exec_blocks:
+  assumes "step\<^sup>*\<^sup>* bs bs'"
+  assumes "terminal_state bs'"
+  assumes "bs = bbranch s prev lab"
+  assumes "\<not> is_berr bs'"
+  shows
+    "execute_blocks prev lab (llvm_function.blocks program) s = ok (state bs', ret_value bs')"
+  using assms
+proof (induction arbitrary: s prev lab rule: converse_rtranclp_induct)
+  case base
+  then show ?case by simp
+next
+  case (step y z)
+  then show ?case
+    by (subst execute_blocks.simps; auto split: option.splits result.splits llvm_block_return.splits simp: step_def)
+qed
+
+lemma bla:
+  assumes "step\<^sup>*\<^sup>* x (bbranch s p l)" "precond s"
+  assumes "\<And>s. precond s \<longrightarrow> step\<^sup>*\<^sup>* (bbranch s p l) y"
+  shows "step\<^sup>*\<^sup>* x y"
+  using assms
+  by fastforce
+
+lemma
+  assumes "step\<^sup>*\<^sup>* bs (bbranch s' p l)" "precond s'"
+  assumes "bs = bbranch s prev lab"
+  assumes "\<And>s. precond s \<longrightarrow> step\<^sup>*\<^sup>* (bbranch s p l) bs'"
+  assumes "\<not> is_berr bs'"
+  assumes "terminal_state bs'"
+  shows "execute_blocks prev lab (llvm_function.blocks program) s = ok (state bs', ret_value bs')"
+  using assms bla step_eq_exec_blocks by metis
+
+
+end
+
+
+
+
+
+
 
 
 end

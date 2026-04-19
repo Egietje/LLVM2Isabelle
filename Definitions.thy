@@ -14,14 +14,12 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
-type_synonym llvm_register_name = string
+datatype llvm_identifier = lid string | gid string
 
-datatype llvm_value_ref = reg llvm_register_name | val llvm_value
+datatype llvm_value_ref = reg llvm_identifier | val llvm_value
 
 (* Should only have a memory address or memory address... *)
 type_synonym llvm_pointer = llvm_value_ref
-
-type_synonym llvm_label = string
 
 
 subsection "Instructions"
@@ -35,32 +33,33 @@ datatype llvm_compare_condition = comp_eq | comp_ne
 type_synonym llvm_same_sign = bool
 
 
-datatype llvm_phi_node = phi llvm_register_name llvm_type "(llvm_label * llvm_value_ref) list"
+datatype llvm_phi_node = phi llvm_identifier llvm_type "(llvm_identifier * llvm_value_ref) list"
 
 
-datatype llvm_instruction = alloca llvm_register_name llvm_type "llvm_align option"
+datatype llvm_instruction = alloca llvm_identifier llvm_type "llvm_align option"
                           | store llvm_type llvm_value_ref llvm_pointer "llvm_align option"
-                          | load llvm_register_name llvm_type llvm_pointer "llvm_align option"
-                          | add llvm_register_name llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
-                          | icmp llvm_register_name llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
+                          | load llvm_identifier llvm_type llvm_pointer "llvm_align option"
+                          | add llvm_identifier llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
+                          | icmp llvm_identifier llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
 
 datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
-                                     | br_i1 llvm_value_ref llvm_label llvm_label
-                                     | br_label llvm_label
+                                     | br_i1 llvm_value_ref llvm_identifier llvm_identifier
+                                     | br_label llvm_identifier
 
 
 subsection "Blocks, functions, programs"
 
 type_synonym llvm_instruction_block = "(llvm_phi_node list * llvm_instruction list * llvm_terminator_instruction)"
 
-type_synonym llvm_labeled_blocks = "(llvm_label * llvm_instruction_block) list"
+type_synonym llvm_labeled_blocks = "(llvm_identifier * llvm_instruction_block) list"
 
 datatype llvm_block_return = return_value llvm_value
-                           | branch_label llvm_label
+                           | branch_label llvm_identifier
 
 datatype llvm_function_definition = func_def string llvm_type
 
-datatype llvm_function = func llvm_function_definition llvm_labeled_blocks
+datatype llvm_function = func llvm_function_definition (blocks: llvm_labeled_blocks)
+hide_const (open) llvm_function.blocks
 
 datatype llvm_metadata = meta string string string
 
@@ -76,7 +75,7 @@ section "Registers and Memory"
 subsection "Definitions"
 
 type_synonym ('n, 'v) register = "('n, 'v) mapping"
-type_synonym llvm_register_model = "(llvm_register_name, llvm_value) register"
+type_synonym llvm_register_model = "(llvm_identifier, llvm_value) register"
 
 definition empty_register :: "('n, 'v) register" where
   "empty_register = Mapping.empty"
@@ -111,7 +110,7 @@ fun get_register :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value
 definition set_register_value :: "'n \<Rightarrow> 'v \<Rightarrow> ('n, 'v) register \<Rightarrow> ('n, 'v) register" where
   "set_register_value n v vs = Mapping.update n v vs"
 
-fun set_register :: "llvm_register_name \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> state" where
+fun set_register :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> state" where
   "set_register n v (vs,s,h) = (set_register_value n v vs,s,h)"
 
 
