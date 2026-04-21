@@ -270,6 +270,135 @@ lemma
   using assms bla step_eq_exec_blocks by metis
 
 
+type_synonym precondition  = "state \<Rightarrow> bool"
+type_synonym preconditions = "llvm_identifier option \<Rightarrow> llvm_identifier \<Rightarrow> (state \<Rightarrow> bool)"
+type_synonym postcondition = "llvm_value option \<Rightarrow> state \<Rightarrow> bool"
+
+definition "first_label \<equiv> (case llvm_function.blocks program of ((l,b)#bs) \<Rightarrow> l | [] \<Rightarrow> undefined)"
+
+definition verify_function :: "precondition \<Rightarrow> preconditions \<Rightarrow> postcondition \<Rightarrow> bool" where "verify_function pre pres post \<equiv> \<forall>s s' v. pre s \<and> step\<^sup>*\<^sup>* (bbranch s None first_label) (bret s' v) \<longrightarrow> post v s'"
+
+definition "wp_steps bs Q \<equiv> \<forall>s' v. step\<^sup>*\<^sup>* bs (bret s' v) \<longrightarrow> Q s' v"
+
+lemma branch_step_exists[simp]:
+  "is_bbranch bs \<Longrightarrow> \<exists>bs'. step bs bs'"
+  unfolding step_def by simp
+lemma branch_step_unique[simp]:
+  "is_bbranch bs \<Longrightarrow> \<nexists>bs' bs''. step bs bs' \<and> step bs bs'' \<and> bs' \<noteq> bs''"
+  unfolding step_def by simp
+
+lemma execute_and_step[simp]:
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "execute_block p b s = ok (s', br)"
+  assumes "bs' = (case br of branch_label l' \<Rightarrow> bbranch s' (Some l) l' | return_value v \<Rightarrow> bret s' (Some v))"
+  shows "step (bbranch s p l) bs'"
+  using assms
+  unfolding step_def by simp
+
+lemma step_branch_ret_intermediate[simp]:
+  assumes "step\<^sup>*\<^sup>* (bbranch s p l) (bret s' v)"
+  shows "\<exists>bs. step (bbranch s p l) bs \<and> step\<^sup>*\<^sup>* bs (bret s' v)"
+  using assms converse_rtranclpE
+  by fastforce
+
+lemma testasd[simp]:
+  assumes "local.step (bbranch s p l) (bbranch (a, aa, b) x32 x33)"
+  assumes "local.step\<^sup>*\<^sup>* (bbranch s p l) (bret (r', s', h') v)"
+  shows "local.step\<^sup>*\<^sup>* (bbranch (a, aa, b) x32 x33)  (bret (r', s', h') v)"
+  using assms step_branch_ret_intermediate step_def by auto
+
+lemma step_branch_prev_label[simp]:
+  assumes "local.step (bbranch s p l) (bbranch s' p' l')"
+  shows "p' = Some l"
+  using assms
+  unfolding step_def
+  by (auto split: option.splits result.splits llvm_block_return.splits)
+
+lemma blaskd:
+  assumes "\<exists>bs. step (bbranch s p l) bs \<and> \<not>is_berr bs"
+  assumes BRANCH:
+    "\<And>s' l'. step (bbranch s p l) (bbranch s' (Some l) l')
+       \<Longrightarrow> wp_steps (bbranch s' (Some l) l') Q"
+  assumes RETURN:
+    "\<And>s' v. step (bbranch s p l) (bret s' v)
+       \<Longrightarrow> Q s' v"
+  shows "wp_steps (bbranch s p l) Q"
+  using assms
+  apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits)
+  subgoal for bs
+    apply (cases bs)
+    subgoal
+      by (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits)
+    subgoal
+      unfolding wp_steps_def
+      apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits)
+      by (metis step_branch_ret_intermediate step_def terminal_state_simps(2) terminal_steps_refl)
+    unfolding wp_steps_def
+    apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits)
+    subgoal for a b c d e f g h i
+      apply (cases "d = Some l")
+      by (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits)
+    done
+  done
+
+lemma ahsjdihasudhs:
+  "map_of (llvm_function.blocks program) l = Some b \<Longrightarrow> execute_block p b s = ok (s', branch_label l') \<Longrightarrow> step (bbranch s p l) (bbranch s' (Some l) l')"
+  unfolding step_def
+  by (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits simp: step_def)
+lemma ahsjdihasudha:
+  "map_of (llvm_function.blocks program) l = Some b \<Longrightarrow> execute_block p b s = ok (s', return_value v) \<Longrightarrow> step (bbranch s p l) (bret s' (Some v))"
+  unfolding step_def
+  by (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits simp: step_def)
+lemma heloks:
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "\<exists>x. execute_block p b s = ok x"
+  shows "\<exists>bs. step (bbranch s p l) bs \<and> \<not>is_berr bs"
+  using assms
+  unfolding step_def
+  by (auto split: llvm_block_return.splits)
+
+lemma asdsakmd:
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "\<exists>x. execute_block p b s = ok x"
+  assumes
+    "\<And>s' l'. execute_block p b s = ok (s', branch_label l')
+       \<Longrightarrow> wp_steps (bbranch s' (Some l) l') Q"
+  shows
+    "\<And>s' l'. step (bbranch s p l) (bbranch s' (Some l) l')
+       \<Longrightarrow> wp_steps (bbranch s' (Some l) l') Q"
+  using assms unfolding step_def by (auto split: llvm_block_return.splits)
+
+lemma
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "\<exists>x. execute_block p b s = ok x"
+  assumes BRANCH:
+    "\<And>s' l'. execute_block p b s = ok (s', branch_label l')
+       \<Longrightarrow> wp_steps (bbranch s' (Some l) l') Q"
+  assumes RETURN:
+    "\<And>s' v. execute_block p b s = ok (s', return_value v)
+       \<Longrightarrow> Q s' (Some v)"
+  shows "wp_steps (bbranch s p l) Q"
+  using assms 
+  apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits)
+  subgoal for a b c d
+    apply (cases d)
+    subgoal for v
+  using  ahsjdihasudha heloks asdsakmd blaskd try
+  apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits)
+  
+
+lemma
+  assumes "step s (bbranch s' p l)"
+  assumes "case pre l of Some precond \<Rightarrow> precond s' \<and> (\<forall>s. precond s \<longrightarrow> step\<^sup>*\<^sup>* (bbranch s p l) (bret s'' v)) | None \<Rightarrow> step\<^sup>*\<^sup>* (bbranch s' p l) (bret s'' v)"
+  shows "step\<^sup>*\<^sup>* s (bret s'' v)"
+  using assms
+  apply (cases "pre l")
+  apply auto
+  using converse_rtranclp_into_rtranclp prod_cases3
+  by metis
+
+
+
 end
 
 
