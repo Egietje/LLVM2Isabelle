@@ -121,17 +121,17 @@ lemma block_instr_wp_intro[wp_intro]:
 
 lemma block_ret_wp_intro[THEN consequence, wp_intro]:
   assumes "register_\<alpha> s value = Some v"
-  shows "wp (execute_block p ([], [], ret type value) s) (\<lambda>(s', r). s' = s \<and> r = return_value v)"
+  shows "wp (execute_block p ([], [], ret type value) s) (\<lambda>r. r = (s, return_value v))"
   using assms
   by (simp; intro wp_intro wp_return_intro; simp)
 
 lemma block_br_label_wp_intro[THEN consequence, wp_intro]:
-  shows "wp (execute_block p ([], [], br_label l) s) (\<lambda>(s', r). s' = s \<and> r = branch_label l)"
+  shows "wp (execute_block p ([], [], br_label l) s) (\<lambda>r. r = (s, branch_label l))"
   by (simp; rule wp_return_intro; simp)
 
 lemma block_br_i1_wp_intro[THEN consequence, wp_intro]:
   assumes "register_\<alpha> s value = Some (vi1 b)"
-  shows "wp (execute_block p ([], [], br_i1 value l1 l2) s) (\<lambda>(s', r). s' = s \<and> r = branch_label (if b then l1 else l2))"
+  shows "wp (execute_block p ([], [], br_i1 value l1 l2) s) (\<lambda>r. r = (s, branch_label (if b then l1 else l2)))"
   using assms
   by (auto; intro wp_intro; auto; intro wp_intro wp_return_intro; auto)
 
@@ -233,7 +233,6 @@ lemma terminal_steps_refl[simp]: "terminal_state s \<Longrightarrow> step\<^sup>
 lemma terminal_non_err[simp]: "terminal_state s \<and> \<not>is_berr s \<longleftrightarrow> is_bret s"
   by (cases s; auto)
 
-definition "wp_prog s Q \<equiv> \<forall>s'. step\<^sup>*\<^sup>* s s' \<and> terminal_state s' \<longrightarrow> \<not>is_berr s' \<and> Q (ret_value s') (state s') "
 
 
 lemma step_eq_exec_blocks:
@@ -269,14 +268,6 @@ lemma
   shows "execute_blocks prev lab (llvm_function.blocks program) s = ok (state bs', ret_value bs')"
   using assms bla step_eq_exec_blocks by metis
 
-
-type_synonym precondition  = "state \<Rightarrow> bool"
-type_synonym preconditions = "llvm_identifier option \<Rightarrow> llvm_identifier \<Rightarrow> (state \<Rightarrow> bool)"
-type_synonym postcondition = "llvm_value option \<Rightarrow> state \<Rightarrow> bool"
-
-definition "first_label \<equiv> (case llvm_function.blocks program of ((l,b)#bs) \<Rightarrow> l | [] \<Rightarrow> undefined)"
-
-definition verify_function :: "precondition \<Rightarrow> preconditions \<Rightarrow> postcondition \<Rightarrow> bool" where "verify_function pre pres post \<equiv> \<forall>s s' v. pre s \<and> step\<^sup>*\<^sup>* (bbranch s None first_label) (bret s' v) \<longrightarrow> post v s'"
 
 definition "wp_steps bs Q \<equiv> \<forall>s' v. step\<^sup>*\<^sup>* bs (bret s' v) \<longrightarrow> Q s' v"
 
@@ -368,7 +359,7 @@ lemma asdsakmd:
        \<Longrightarrow> wp_steps (bbranch s' (Some l) l') Q"
   using assms unfolding step_def by (auto split: llvm_block_return.splits)
 
-lemma
+lemma intro_helper:
   assumes "map_of (llvm_function.blocks program) l = Some b"
   assumes "\<exists>x. execute_block p b s = ok x"
   assumes BRANCH:
@@ -378,24 +369,85 @@ lemma
     "\<And>s' v. execute_block p b s = ok (s', return_value v)
        \<Longrightarrow> Q s' (Some v)"
   shows "wp_steps (bbranch s p l) Q"
-  using assms 
-  apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits)
-  subgoal for a b c d
-    apply (cases d)
-    subgoal for v
-  using  ahsjdihasudha heloks asdsakmd blaskd try
-  apply (auto split: result.splits llvm_block_return.splits blocks_state.splits prod.splits option.splits)
-  
+  using assms apply (elim exE) subgoal for r
+    apply (cases r) subgoal for s' br apply (cases br)
+      subgoal for v
+        apply (simp)
+        unfolding wp_steps_def apply auto
+        by (metis Blocks.ahsjdihasudha Blocks.terminal_steps_refl blocks_state.inject(1) step_branch_ret_intermediate
+            step_def terminal_state_simps(2))
+      subgoal for l'
+        apply simp
+        unfolding wp_steps_def
+        apply auto
+        by (metis Blocks.ahsjdihasudhs step_branch_ret_intermediate
+            step_def)
+      done
+    done
+  done
 
-lemma
-  assumes "step s (bbranch s' p l)"
-  assumes "case pre l of Some precond \<Rightarrow> precond s' \<and> (\<forall>s. precond s \<longrightarrow> step\<^sup>*\<^sup>* (bbranch s p l) (bret s'' v)) | None \<Rightarrow> step\<^sup>*\<^sup>* (bbranch s' p l) (bret s'' v)"
-  shows "step\<^sup>*\<^sup>* s (bret s'' v)"
+lemma wp_steps_intro_basic:
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "wp (execute_block p b s) (\<lambda>(s', br). case br of 
+      return_value v \<Rightarrow> Q s' (Some v) 
+    | branch_label l' \<Rightarrow> wp_steps (bbranch s' (Some l) l') Q)"
+  shows "wp_steps (bbranch s p l) Q"
+  using assms 
+  unfolding wp_gen_def
+  apply (cases "execute_block p b s"; simp)
+  subgoal for r
+    apply (cases r)
+    subgoal for s' br
+      apply (cases br; simp)
+      apply (rule intro_helper) apply simp apply fast apply simp apply simp 
+      apply (rule intro_helper) apply simp apply fast apply simp apply simp
+      done
+    done
+  done
+
+type_synonym precondition  = "state \<Rightarrow> bool"
+type_synonym preconditions = "llvm_identifier option \<Rightarrow> llvm_identifier \<Rightarrow> precondition option"
+type_synonym postcondition = "state \<Rightarrow> llvm_value option \<Rightarrow> bool"
+
+definition "first_label \<equiv> (case llvm_function.blocks program of ((l,b)#bs) \<Rightarrow> l | [] \<Rightarrow> undefined)"
+
+definition PRECONDS :: "preconditions \<Rightarrow> bool" where "PRECONDS pres \<equiv> True"
+
+definition verify_function :: "precondition \<Rightarrow> preconditions \<Rightarrow> postcondition \<Rightarrow> bool" where
+  "verify_function pre pres post \<equiv> (\<forall>s. PRECONDS pres \<and> pre s \<longrightarrow> wp_steps (bbranch s None first_label) post)"
+definition wp_steps_intro_post where
+  "wp_steps_intro_post Q pres l \<equiv> (\<lambda>(s', br).
+          case br of
+            return_value v \<Rightarrow> Q s' (Some v)
+          | branch_label l' \<Rightarrow>
+              (case pres (Some l) l' of
+                Some precond \<Rightarrow> precond s' \<and> (\<forall>s. precond s \<longrightarrow> wp_steps (bbranch s (Some l) l') Q)
+              | None \<Rightarrow> wp_steps (bbranch s' (Some l) l') Q
+              )
+          )"
+
+lemma wp_steps_intro:
+  assumes "PRECONDS pres"
+  assumes "map_of (llvm_function.blocks program) l = Some b"
+  assumes "wp (execute_block p b s) (wp_steps_intro_post Q pres l)"
+  shows "wp_steps (bbranch s p l) Q"
   using assms
-  apply (cases "pre l")
-  apply auto
-  using converse_rtranclp_into_rtranclp prod_cases3
-  by metis
+  unfolding wp_gen_def wp_steps_intro_post_def
+  apply (cases "execute_block p b s"; simp)
+  subgoal for r
+    apply (cases r)
+    subgoal for s' br
+      apply (cases br)
+      using wp_steps_intro_basic apply simp
+      subgoal for l'
+        apply (cases "pres (Some l) l'")
+        using wp_steps_intro_basic apply simp
+        apply (rule wp_steps_intro_basic) apply fast
+        unfolding wp_gen_def apply simp
+          by (metis set_register.elims)
+      done
+    done
+  done
 
 
 

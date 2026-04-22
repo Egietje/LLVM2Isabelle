@@ -23,160 +23,6 @@ type_synonym function_postcondition = "(llvm_value option * state) \<Rightarrow>
 datatype annotated_function = annotated "llvm_function" "block_preconditions" "function_postcondition"
 
 
-inductive verify where
-  return:
-    "map_of blocks label = Some block \<Longrightarrow>
-    execute_block prev block s = ok (s', return_value v) \<Longrightarrow>
-    post (Some v, s') \<Longrightarrow>
-    verify (annotated (func fdef blocks) pre post) prev label s (s', return_value v)"
-| branch_precond:
-    "map_of blocks label = Some block \<Longrightarrow>
-    execute_block prev block s = ok (s', branch_label bl) \<Longrightarrow>
-    map_of pre bl = Some precond \<Longrightarrow>
-    precond s' \<Longrightarrow>
-    \<forall>s. precond s \<longrightarrow> verify (annotated (func fdef blocks) pre post) (Some label) bl s (s'', r') \<Longrightarrow>
-    verify (annotated (func fdef blocks) pre post) prev label s (s'', r')"
-| branch_without:
-    "map_of blocks label = Some block \<Longrightarrow>
-    execute_block prev block s = ok (s', branch_label bl) \<Longrightarrow>
-    map_of pre bl = None \<Longrightarrow>
-    verify (annotated (func fdef blocks) pre post) (Some label) bl s (s'', r') \<Longrightarrow>
-    verify (annotated (func fdef blocks) pre post) prev label s (s'', r')"
-
-
-
-term verify
-
-
-partial_function (tailrec) execute_blocks_from_until :: "annotated_function \<Rightarrow> llvm_identifier \<Rightarrow> llvm_identifier option \<Rightarrow> state \<Rightarrow> (state * llvm_block_return) result" where
-  "execute_blocks_from_until fun label prev s = (case fun of annotated (func fdef blocks) pre post \<Rightarrow>
-    (case map_of blocks label of
-      None \<Rightarrow> err unknown_label
-    | Some b \<Rightarrow> (case (execute_block prev b s) of
-        ok (s', return_value v) \<Rightarrow> ok (s', return_value v) \<comment> \<open>function terminated execution\<close>
-      | ok (s', branch_label l) \<Rightarrow> (case map_of pre l of
-          Some _ \<Rightarrow> ok (s', branch_label l)                \<comment> \<open>block terminated execution\<close>
-        | None \<Rightarrow> execute_blocks_from_until fun l (Some label) s'
-        )
-      | err e \<Rightarrow> err e
-      )
-    )
-  )"
-lemmas [code] = execute_blocks_from_until.simps
-
-lemma [partial_function_mono]:
-"monotone tailrec.le_fun tailrec_ord
-          (\<lambda>f. wp (execute_blocks_from_until (annotated fun pres post) current prev s)
-                 (\<lambda>(s', y).
-                     case_llvm_block_return (\<lambda>v. x3 (Some v, s'))
-                      (\<lambda>l'. case map_of x2 l' of None \<Rightarrow> False
-                             | Some Q \<Rightarrow> Q s' \<and> f (((annotated fun pres post, l'), Some current), s'))
-                      y))"
-  unfolding wp_gen_def fun_ord_def
-  apply (rule monotoneI)
-  apply (auto split: result.splits llvm_block_return.splits option.splits simp: Partial_Function.tailrec.leq_refl)
-  subgoal for f g r s h l pre
-    by (cases "pre (r,s,h)", auto simp: Partial_Function.tailrec.leq_refl)
-  done
-
-partial_function (tailrec)  wp_blocks_from_until where "wp_blocks_from_until fun l p s =
-  (case fun of annotated (func fdef blocks) pre post \<Rightarrow>
-    (if (the (map_of pre l) s)
-       then
-    (wp (execute_blocks_from_until (annotated (func fdef blocks) pre post) l p s)
-      (\<lambda>(s,r).
-        case r of
-          return_value v \<Rightarrow> post (Some v, s) \<comment> \<open>postcondition of whole annotated function holds\<close>
-        | branch_label l' \<Rightarrow>            \<comment> \<open>look at precondition of next block and prove that\<close>
-            (case (map_of pre l') of
-                   \<comment> \<open>next block has a precondition;  we recurse\<close>
-                   Some Q \<Rightarrow> Q s \<and> wp_blocks_from_until fun l' (Some l) s
-                 | None \<Rightarrow> False))
-      )
-       else False))"
-  
-
-(* NOTE edo this may be a coinductive definition *)
-
-
-fun block_transitions :: "llvm_labeled_blocks \<Rightarrow> (llvm_identifier * llvm_identifier) list" where
-  "block_transitions ((from, (_, _, br_label to)) # bs) = (from, to) # block_transitions bs"
-| "block_transitions ((from, (_, _, br_i1 _ to1 to2)) # bs) = (from, to1) # (from, to2) # block_transitions bs"
-| "block_transitions (_#bs) = block_transitions bs"
-| "block_transitions [] = []"
-
-fun transitions_to :: "(llvm_identifier * llvm_identifier) list \<Rightarrow> llvm_identifier list \<Rightarrow> (llvm_identifier option * llvm_identifier) list" where
-  "transitions_to ((from, to)#ls) l = (if List.member l to then (Some from,to)#transitions_to ls l else transitions_to ls l)"
-| "transitions_to [] _ = []"
-
-lemma hoare_blocks_from_until_intro:
-  assumes "map_of blocks label = Some b"
-  assumes "hoare
-            P
-            (execute_block prev b)
-            (\<lambda>(s, r). case r of
-              return_value v \<Rightarrow> Q (s, r)
-            | branch_label l \<Rightarrow> (case map_of pre l of
-                Some _ \<Rightarrow> Q (s, r)
-              | None \<Rightarrow>
-                hoare
-                  (\<lambda>s'. s' = s)
-                  (execute_blocks_from_until (annotated (func fdef blocks) pre post) l (Some label))
-                Q
-              )
-            )"
-  shows "hoare P (execute_blocks_from_until (annotated (func fdef blocks) pre post) label prev) Q"
-  apply (rule hoare_intro)
-  using assms
-  apply (auto simp: execute_blocks_from_until.simps hoare_def wp_gen_def split: if_splits llvm_block_return.splits)
-  subgoal for r s h
-  unfolding hoare_def wp_gen_def
-  apply (cases "execute_block prev b (r, s, h)")
-  apply auto
-  subgoal for r' s' h' ret
-    apply (cases ret)
-     apply auto apply force
-    subgoal for l 
-      apply (cases "map_of pre l") apply auto apply force by fastforce
-    done
-  by fastforce
-  done
-
-fun verify_blocks_hoare where
-  "verify_blocks_hoare (annotated (func fdef blocks) pre post) label prev precond =
-    hoare
-      precond
-      (execute_blocks_from_until (annotated (func fdef blocks) pre post) label prev)
-      (\<lambda>(s, r). (case r of
-        return_value v \<Rightarrow> post (Some v, s)
-      | branch_label l \<Rightarrow> (case map_of pre l of
-          Some Q \<Rightarrow> Q s
-        | None \<Rightarrow> False
-        )
-      ))"
-
-fun verify_blocks_from where
-  "verify_blocks_from (annotated f pre post) label prev = (case map_of pre label of
-    Some precond \<Rightarrow> verify_blocks_hoare (annotated f pre post) label prev precond
-  | None \<Rightarrow> verify_blocks_hoare (annotated f pre post) label prev (\<lambda>s. True))"
-
-fun verify_blocks where
-  "verify_blocks f ((prev, label)#ls) = (verify_blocks_from f label prev \<and> verify_blocks f ls)"
-| "verify_blocks _ [] = True"
-
-fun verify_function :: "annotated_function \<Rightarrow> bool" where
-  "verify_function (annotated (func fdef ((first_label, first_block)#bs)) pre post) = (
-    distinct (map fst pre)
-  \<and> verify_blocks
-      (annotated (func fdef ((first_label, first_block)#bs)) pre post)
-      ((None, first_label)#(transitions_to
-        (block_transitions ((first_label, first_block)#bs))
-        (if List.member (map fst pre) first_label then map fst pre else first_label#(map fst pre))
-      ))
-  )"
-| "verify_function (annotated _ pre post) = False"
-
-
 
 section "Useful Shorthands"
 
@@ -321,23 +167,23 @@ method clean_goal' = (simp (no_asm_simp) split: prod.splits del: register_\<alph
 method clean_goal = (match conclusion in "case _ of (s, r) \<Rightarrow> (case r of return_value _ \<Rightarrow> _ | branch_label _ \<Rightarrow> _)" \<Rightarrow> clean_goal')
 
 method clean_case_prod_goal = simp only: split split: prod.splits; intro allI impI conjI; (simp; fail)?; elim conjE
-
+(*
 method unfold_execute_blocks_from_until = rule asm_rl[of "hoare _ (execute_blocks_from_until _ _ _) _"], rule hoare_blocks_from_until_intro, sub_map_of_some
 method unfold_verify_blocks_from = rule asm_rl[of "verify_blocks_from _ _ _"], simp
 
 method unfold_verify_function = rule asm_rl[of "verify_function _"], simp del: verify_blocks_from.simps, (intro conjI)?
 
-method attempt_endgoal_strat = unfold_shorthands?; (force | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
-method match_all_but_endgoal = rule asm_rl[of "verify_function _"]
-  | rule asm_rl[of "verify_blocks_from _ _ _"]
-  | rule asm_rl[of "hoare _ _ _"]
-  | rule asm_rl[of "wp _ _"]
 
-method attempt_endgoal = (match_all_but_endgoal | attempt_endgoal_strat); fail
 
 method vcg_step = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step | attempt_endgoal
 method vcg_step_dbg = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step_dbg | attempt_endgoal
 method vcg = vcg_step+
 method vcg_dbg = vcg_step_dbg+
+*)
+
+method attempt_endgoal_strat = unfold_shorthands?; (force | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
+method match_all_but_endgoal = rule asm_rl[of "wp _ _"]
+
+method attempt_endgoal = (match_all_but_endgoal | attempt_endgoal_strat); fail
 
 end

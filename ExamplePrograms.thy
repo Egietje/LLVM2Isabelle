@@ -102,9 +102,9 @@ definition phi_main :: "llvm_function" where
 lemma "verify_function (annotated
     phi_main
 
-    [
+    (map_of [
       (lid ''10'',  (\<lambda>s. \<exists>v a3. register_\<alpha> s (reg (lid ''8'')) = Some v \<and> register_\<alpha> s (reg (lid ''3'')) = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None))
-    ]
+    ])
 
     (\<lambda>(v, s). v = (the (register_\<alpha> s (reg (lid ''8'')))) \<or> v = vi32 0)
   )"
@@ -169,8 +169,8 @@ definition mult_entry :: "llvm_instruction_block" where
   )"
 
 
-definition mult_entry_pre where
-  "mult_entry_pre = (\<lambda>s. \<exists>a b.
+definition mult_pre :: "precondition" where
+  "mult_pre = (\<lambda>s. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> - (2 ^ 31) \<le>s a * b
@@ -224,7 +224,7 @@ definition mult_body :: "llvm_instruction_block" where
     br_label (lid ''for.inc'')
   )"
 
-definition mult_body_pre where
+definition mult_body_pre :: "precondition" where
   "mult_body_pre = (\<lambda>s. \<exists>a b i.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 a) s
@@ -281,7 +281,7 @@ definition mult_end :: "llvm_instruction_block" where
     ret i32 (reg (lid ''5''))
   )"
 
-definition mult_end_pre where
+definition mult_end_pre :: "precondition" where
   "mult_end_pre = (\<lambda>s. \<exists>a b i.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 a) s
@@ -296,11 +296,11 @@ definition mult_end_pre where
   \<and> i = b
   )"
 
-definition mult_post where
-  "mult_post = (\<lambda>(r, s). \<exists>a b.
+definition mult_post :: "postcondition" where
+  "mult_post = (\<lambda>s v. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 a) s
-  \<and> r = vi32 (a * b)
+  \<and> v = Some (vi32 (a * b))
   )"
 
 (*
@@ -322,20 +322,45 @@ definition mult_function :: llvm_function where
     ]
   )"
 
-definition mult_annotated :: annotated_function where
-  "mult_annotated = annotated
+definition create_pres :: "(llvm_identifier * bool * (llvm_identifier option * precondition) list) list \<Rightarrow> preconditions" where
+  "create_pres pres = (\<lambda>p l.
+    case map_of pres l of
+      Some (True, ps) \<Rightarrow> map_of ps p
+    | Some (False, (_, pre)#ps) \<Rightarrow> Some pre
+    | None \<Rightarrow> None)"
+
+method wipe_assumptions = ((thin_tac "_ = _")+)?, ((thin_tac "register_contains_value _ _ _")+)?, ((thin_tac "_ <s _")+)?, ((thin_tac "_ \<le>s _")+)?
+method vcg_verify_function = rule asm_rl[of "verify_function _ _ _ _"], unfold verify_function_def, unfold first_label_def, intro allI impI, elim conjE
+method vcg_wp_steps = rule asm_rl[of "wp_steps _ _ _"], rule wp_steps_intro, blast, simp
+method vcg_block uses defs = unfold defs, block_vcg, unfold wp_steps_intro_post_def create_pres_def, simp (no_asm)
+
+lemma
+  "verify_function
     mult_function
-    [
-      (lid ''entry'', mult_entry_pre),
-      (lid ''for.body'', mult_body_pre),
-      (lid ''for.end'', mult_end_pre)
-    ]
+    mult_pre
+    (create_pres [
+      (lid ''for.body'', False, [(None, mult_body_pre)]),
+      (lid ''for.end'', False, [(None, mult_end_pre)])
+    ])
     mult_post"
-
-
-lemma "verify_function mult_annotated"
-  unfolding mult_annotated_def mult_function_def mult_entry_def mult_cond_def mult_body_def mult_inc_def mult_end_def mult_entry_pre_def mult_body_pre_def mult_end_pre_def mult_post_def
-  by vcg
+  unfolding mult_function_def
+  apply vcg_verify_function
+  apply vcg_wp_steps
+  apply (vcg_block defs: mult_entry_def mult_pre_def)
+  apply vcg_wp_steps
+  apply (vcg_block defs: mult_cond_def)
+  apply (simp only: if_True)
+  apply (intro conjI)
+  subgoal unfolding mult_body_pre_def by attempt_endgoal
+  apply wipe_assumptions
+  apply auto
+  apply (unfold mult_body_pre_def)
+  apply clean_assms
+  apply (rule wp_steps_intro) apply blast apply simp
+  unfolding mult_body_def apply block_vcg
+  apply (rule wp_intro) apply unfold_shorthands apply clean_assms oops
+  
+  
 
                  
 lemma "verify_function mult_annotated"
