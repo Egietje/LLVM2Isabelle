@@ -1,29 +1,54 @@
-#let title-page(title:[], email:[], name:[], fill: yellow, body) = {
-  set page(margin: (top: 3cm, rest: 4cm))
-  set text(font: "Source Sans Pro", size: 14pt)
+#let title-page(title:[], subtitle:[], email:[], name:[], supervisors: [], body) = {
+  set page(margin: (top: 3cm, bottom: 3cm, left: 4cm, right: 4cm))
+  set text(size: 14pt)
   set heading(numbering: "1.1.1")
+
   line(start: (0%, 0%), end: (8.5in, 0%), stroke: (thickness: 2pt))
-  align(horizon + left)[
-    #text(size: 24pt, title)\
-    #v(1em)
-    Research Topics
-    #v(2em)
-    #text(name)\
-    #link(email)
+
+  align(left)[
+    #v(1.2cm)
+    #text(size: 24pt, weight: "bold")[#title] \
+    #v(0.5em)
+    #text(size: 20pt, weight: "semibold")[#subtitle]
+    #v(0.8em)
+    #text(weight: "semibold", fill: luma(64))[Research Topics]
   ]
-  
-  align(bottom + left)[#datetime.today().display()]
+
+  v(1fr)
+
+  columns(2)[
+    #text(weight: "semibold", fill: gray)[Author] #v(0.3cm)
+    #text(name) \
+    #link(email)
+    
+  #colbreak()
+    
+    #align(right)[
+      #text(weight: "semibold", fill: gray)[Supervisors] #v(0.3cm)
+      #supervisors
+    ]
+  ]
+
+
   pagebreak()
+
   set page(fill: none, margin: auto)
-  align(horizon, outline(indent: auto, depth: 2))
+
+  align(center)[
+    #outline(indent: auto, depth: 2)
+  ]
+
   pagebreak()
+
   body
 }
 
 #show: body => title-page(
-  title: "Deductive LLVM verification in Isabelle",
+  title: "IsabeLLeVM",
+  subtitle: "Deductive verification of LLVM-IR programs in Isabelle",
   email: "mailto:t.s.kas@student.utwente.nl",
   name: "Thomas Kas",
+  supervisors: [dr. P. Lammich \ E. Putti],
   body
 )
 
