@@ -11,7 +11,7 @@ datatype (discs_sels) flow_state =
 context fixes f :: "llvm_function"
 begin
 
-definition "first_label \<equiv> (case llvm_function.blocks f of ((l,b)#bs) \<Rightarrow> l)"
+definition "first_label \<equiv> (case llvm_function.blocks f of ((l,b)#fs) \<Rightarrow> l)"
 
 fun branch_step :: "flow_state \<Rightarrow> flow_state" where
   "branch_step (berr) = berr"
@@ -37,8 +37,8 @@ fun n_steps :: "flow_state \<Rightarrow> nat \<Rightarrow> flow_state \<Rightarr
 notation n_steps ("(_ \<rightarrow>^_ _)" [51, 0, 51] 50)
 
 lemma steps_exists_n_steps:
-  assumes "bs \<rightarrow>* bs'"
-  shows "\<exists>n. bs \<rightarrow>^n bs'"
+  assumes "fs \<rightarrow>* fs'"
+  shows "\<exists>n. fs \<rightarrow>^n fs'"
   using assms n_steps.simps
   by (induction rule: converse_rtranclp_induct; blast)
 
@@ -62,26 +62,26 @@ lemma terminal_non_err[simp]:
   by (cases s; auto)
 
 lemma step_deterministic[simp]:
-  "is_bbranch bs \<Longrightarrow> \<exists>bs'. step bs bs'"
-  "is_bbranch bs \<Longrightarrow> \<nexists>bs' bs''. step bs bs' \<and> step bs bs'' \<and> bs' \<noteq> bs''"
+  "is_bbranch fs \<Longrightarrow> \<exists>fs'. step fs fs'"
+  "is_bbranch fs \<Longrightarrow> \<nexists>fs' fs''. step fs fs' \<and> step fs fs'' \<and> fs' \<noteq> fs''"
   unfolding step_def by simp+
 
 lemma step_models_execute_blocks_ok:
-  assumes "bs \<rightarrow>* bs'"
-  assumes "terminal_state bs'"
-  assumes "bs = bbranch s prev lab"
-  assumes "\<not> is_berr bs'"
-  shows   "execute_blocks prev lab (llvm_function.blocks f) s = ok (state bs', ret_value bs')"
+  assumes "fs \<rightarrow>* fs'"
+  assumes "terminal_state fs'"
+  assumes "fs = bbranch s prev lab"
+  assumes "\<not> is_berr fs'"
+  shows   "execute_blocks prev lab (llvm_function.blocks f) s = ok (state fs', ret_value fs')"
   using assms
   apply (induction arbitrary: s prev lab rule: converse_rtranclp_induct)
   apply simp
   by (subst execute_blocks.simps; auto split: option.splits result.splits llvm_block_return.splits simp: step_def)
 
 lemma step_models_execute_blocks_err:
-  assumes "bs \<rightarrow>* bs'"
-  assumes "terminal_state bs'"
-  assumes "bs = bbranch s prev lab"
-  assumes "is_berr bs'"
+  assumes "fs \<rightarrow>* fs'"
+  assumes "terminal_state fs'"
+  assumes "fs = bbranch s prev lab"
+  assumes "is_berr fs'"
   shows   "\<exists>e. execute_blocks prev lab (llvm_function.blocks f) s = err e"
   using assms
   apply (induction arbitrary: s prev lab rule: converse_rtranclp_induct)
@@ -89,7 +89,7 @@ lemma step_models_execute_blocks_err:
   by (subst execute_blocks.simps; auto split: option.splits result.splits llvm_block_return.splits simp: step_def)
 
 
-definition "wp_steps bs Q \<equiv> \<forall>bs'. bs \<rightarrow>* bs' \<and> terminal_state bs' \<longrightarrow> \<not>is_berr bs' \<and> Q (state bs') (ret_value bs')"
+definition "wp_steps fs Q \<equiv> \<forall>fs'. fs \<rightarrow>* fs' \<and> terminal_state fs' \<longrightarrow> \<not>is_berr fs' \<and> Q (state fs') (ret_value fs')"
 
 
 type_synonym precondition  = "state \<Rightarrow> bool"
@@ -105,23 +105,23 @@ begin
 
 
 lemma
-  assumes "\<forall>bs'. bs \<rightarrow>* bs' \<and> terminal_state bs' \<longrightarrow> \<not>is_berr bs' \<and> post (state bs') (ret_value bs')"
-  shows "wp_steps bs post"
+  assumes "\<forall>fs'. fs \<rightarrow>* fs' \<and> terminal_state fs' \<longrightarrow> \<not>is_berr fs' \<and> post (state fs') (ret_value fs')"
+  shows "wp_steps fs post"
   unfolding wp_steps_def using assms by blast
 
 
-definition "has_annotation bs \<equiv>
-  (case bs of
+definition "has_annotation fs \<equiv>
+  (case fs of
     berr \<Rightarrow> False
   | bret _ _ \<Rightarrow> True
   | bbranch _ p l \<Rightarrow> (annotations p l) \<noteq> None
   )"
 
-definition "annotation_holds bs \<equiv>
-  (case bs of
+definition "annotation_holds fs \<equiv>
+  (case fs of
     berr \<Rightarrow> False
   | bret s v \<Rightarrow> post s v
-  | bbranch s p l \<Rightarrow> has_annotation bs \<and>
+  | bbranch s p l \<Rightarrow> has_annotation fs \<and>
     (case (annotations p l) of
       None \<Rightarrow> False
     | Some annot \<Rightarrow> annot s
@@ -129,9 +129,9 @@ definition "annotation_holds bs \<equiv>
   )"
 
 definition step_until :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<Rightarrow>" 50) where
-  "step_until bs bs' \<equiv> step bs bs' \<and> \<not>has_annotation bs"
+  "step_until fs fs' \<equiv> step fs fs' \<and> \<not>has_annotation fs"
 abbreviation steps_until :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<Rightarrow>*" 50) where
-  "bs \<Rightarrow>* bs' \<equiv> step_until\<^sup>*\<^sup>* bs bs'"
+  "fs \<Rightarrow>* fs' \<equiv> step_until\<^sup>*\<^sup>* fs fs'"
 
 fun n_steps_until :: "flow_state \<Rightarrow> nat \<Rightarrow> flow_state \<Rightarrow> bool" where
   "n_steps_until s 0 s'  = (s = s')"
@@ -141,38 +141,46 @@ notation n_steps_until ("(_ \<Rightarrow>^_ _)" [51, 0, 51] 50)
 
 definition keep_stepping_until :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<Rightarrow>*a" 50) where
   "keep_stepping_until s s' \<equiv> (\<exists>x. s \<rightarrow> x \<and> x \<Rightarrow>* s') \<and> (has_annotation s')"
+abbreviation keep_stepping_until_closure :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<Rightarrow>*a*" 50) where
+  "fs \<Rightarrow>*a* fs' \<equiv> keep_stepping_until\<^sup>*\<^sup>* fs fs'"
 
 
 lemma annotation_simps[simp]:
-  "\<nexists>bs'. step_until bs bs' \<Longrightarrow> \<not>is_berr bs \<Longrightarrow> has_annotation bs"
+  "\<nexists>fs'. step_until fs fs' \<Longrightarrow> \<not>is_berr fs \<Longrightarrow> has_annotation fs"
   "annotations p l \<noteq> None \<Longrightarrow> \<forall>s. has_annotation (bbranch s p l)"
   unfolding step_until_def has_annotation_def step_def
   by (auto split: flow_state.splits)
 
 lemma step_until_single[simp]:
-  "\<nexists>bs' bs''. step_until bs bs' \<and> step_until bs bs'' \<and> bs' \<noteq> bs''"
+  "\<nexists>fs' fs''. step_until fs fs' \<and> step_until fs fs'' \<and> fs' \<noteq> fs''"
   unfolding step_until_def step_def by blast
 
-
 lemma steps_until_models_steps:
-  assumes "bs \<Rightarrow>* bs'"
-  shows "bs \<rightarrow>* bs'"
+  assumes "fs \<Rightarrow>* fs'"
+  shows "fs \<rightarrow>* fs'"
   using assms
   unfolding step_until_def
   apply (induction rule: rtranclp_induct)
   by auto
 
-lemma step_then_steps_until_models_steps:
-  assumes "\<And>x. bs \<rightarrow> x \<and> x \<Rightarrow>* bs'"
-  shows "bs \<rightarrow>* bs'"
+lemma keep_stepping_until_models_steps:
+  assumes "fs \<Rightarrow>*a fs'"
+  shows "fs \<rightarrow>* fs'"
   using assms steps_until_models_steps
+  unfolding keep_stepping_until_def
+  by fastforce
+
+lemma keep_stepping_impl_has_annotation:
+  assumes "fs \<Rightarrow>*a fs'"
+  shows "has_annotation fs'"
+  using assms
+  unfolding keep_stepping_until_def
   by blast
 
 
-definition "floyd_cond s p l \<equiv> \<forall>bs'.
-    (bbranch s p l) \<Rightarrow>*a bs'
-    \<longrightarrow> \<not>is_berr bs' \<and> annotation_holds bs'"
-
+definition "floyd_cond s p l \<equiv> \<forall>fs'.
+    (bbranch s p l) \<Rightarrow>*a fs'
+    \<longrightarrow> \<not>is_berr fs' \<and> annotation_holds fs'"
 
 definition floyd_vc :: "bool" where
   "floyd_vc \<equiv>
@@ -183,37 +191,48 @@ definition floyd_vc :: "bool" where
 
 lemma floyd_vc_impl_annotation_holds:
   assumes "floyd_vc"
-  assumes "\<And>x bs. annotation_holds bs \<longrightarrow> bs \<Rightarrow>*a bs'"
-  shows "annotation_holds bs'"
+  shows "\<forall>fs fs'. annotation_holds fs \<and> fs \<Rightarrow>*a fs' \<longrightarrow> annotation_holds fs'"
   using assms
-  unfolding floyd_vc_def floyd_cond_def has_annotation_def keep_stepping_until_def
-  by fast
+  apply (intro allI impI) subgoal for fs
+  unfolding floyd_vc_def floyd_cond_def has_annotation_def keep_stepping_until_def annotation_holds_def has_annotation_def step_def
+  by (cases fs; fastforce)
+  done
 
 lemma floyd_vc_impl_post_cond:
   assumes "floyd_vc"
-  assumes "\<And>bs x. annotation_holds bs \<longrightarrow> bs \<Rightarrow>*a bret s v"
-  shows "post s v"
-  using assms 
-  unfolding floyd_vc_def floyd_cond_def has_annotation_def annotation_holds_def keep_stepping_until_def
-  by force
+  shows "\<forall>fs s v. annotation_holds fs \<and> fs \<Rightarrow>*a bret s v \<longrightarrow> post s v"
+  using assms
+  apply (intro allI impI) subgoal for fs
+  unfolding floyd_vc_def floyd_cond_def has_annotation_def keep_stepping_until_def annotation_holds_def has_annotation_def step_def
+  by (cases fs; fastforce)
+  done
 
-lemma steps_until_glue_to_steps:
-  assumes "bs \<rightarrow>* bs'"
-  shows "\<exists>"
+lemma floyd_vc_impl_annotation_holds_for_closure_helper:
+  assumes "fs \<Rightarrow>*a* fs'"
+  assumes "annotation_holds fs"
+  assumes "floyd_vc"
+  shows "annotation_holds fs'"
+  using assms floyd_vc_impl_annotation_holds
+  by (induction rule: rtranclp_induct; blast)
 
-lemma floyd_vc_induct:
-  assumes BASE: "\<exists>s. annotation_holds (bbranch s None first_label)"
-  assumes STEP: "\<And>bs x bs'. annotation_holds bs \<and> bs \<rightarrow> x \<and> x \<Rightarrow>* bs' \<and> has_annotation bs' \<longrightarrow> annotation_holds bs'"
-  assumes END: "\<exists>bs s' v. annotation_holds bs \<longrightarrow> bs \<rightarrow> x \<and> x \<Rightarrow>* bret s' v"
-  shows ""
+lemma floyd_vc_impl_annotation_holds_for_closure:
+  assumes "floyd_vc"
+  shows "\<forall>fs fs'. annotation_holds fs \<and> fs \<Rightarrow>*a* fs' \<longrightarrow> annotation_holds fs'"
+  using assms floyd_vc_impl_annotation_holds_for_closure_helper
+  by blast
 
-
+lemma
+  "fs \<Rightarrow>*a* fs' \<Longrightarrow> fs \<rightarrow>* fs'"
+    apply (induction rule: converse_rtranclp_induct)
+    apply fast
+    using keep_stepping_until_models_steps
+    by force 
 
 lemma floyd_vc_impl_wp_step:
   assumes "floyd_vc"
-  assumes "bs = bbranch s None first_label"
-  assumes "annotation_holds bs"
-  shows "wp_steps bs post"
+  assumes "fs = bbranch s None first_label"
+  assumes "annotation_holds fs"
+  shows "wp_steps fs post"
   using assms
 proof (-)
 
