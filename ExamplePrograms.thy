@@ -2,154 +2,6 @@ theory ExamplePrograms
   imports "VCG" "HOL-Library.AList_Mapping"
 begin
 
-section "Simple Branching"
-
-definition sbmain :: "llvm_instruction_block" where
-  "sbmain = ([],[
-    alloca (lid ''1'') i32 (Some 4),
-    alloca (lid ''2'') i32 (Some 4),
-    alloca (lid ''3'') i32 (Some 4),
-    alloca (lid ''4'') i32 (Some 4),
-    alloca (lid ''5'') i32 (Some 4),
-    store i32 (val (vi32 0)) (reg (lid ''1'')) (Some 4),
-    store i32 (val (vi32 1)) (reg (lid ''2'')) (Some 4),
-    store i32 (val (vi32 2)) (reg (lid ''3'')) (Some 4),
-    load (lid ''6'') i32 (reg (lid ''2'')) (Some 4),
-    add (lid ''7'') add_nsw i32 (reg (lid ''6'')) (val (vi32 1)),
-    load (lid ''8'') i32 (reg (lid ''3'')) (Some 4),
-    icmp (lid ''9'') False comp_eq i32 (reg (lid ''7'')) (reg (lid ''8''))],
-    br_i1 (reg (lid ''9'')) (lid ''10'') (lid ''12'')
-  )"
-
-definition sb10 :: "llvm_instruction_block" where
-  "sb10 = ([],[
-    store i32 (val (vi32 3)) (reg (lid ''4'')) (Some 4),
-    load (lid ''11'') i32 (reg (lid ''4'')) (Some 4),
-    store i32 (reg (lid ''11'')) (reg (lid ''3'')) (Some 4)],
-    br_label (lid ''14'')
-  )"
-
-definition sb12 :: "llvm_instruction_block" where
-  "sb12 = ([],[
-    store i32 (val (vi32 4)) (reg (lid ''5'')) (Some 4),
-    load (lid ''13'') i32 (reg (lid ''5'')) (Some 4),
-    store i32 (reg (lid ''13'')) (reg (lid ''3'')) (Some 4)],
-    br_label (lid ''14'')
-  )"
-
-definition sb14 :: "llvm_instruction_block" where
-  "sb14 = ([],[
-    load (lid ''15'') i32 (reg (lid ''3'')) (Some 4)],
-    ret i32 (reg (lid ''15''))
-  )"
-
-definition simple_branching_main :: "llvm_function" where
-  "simple_branching_main = func (func_def ''main'' i32) [(lid ''main'', sbmain), (lid ''10'', sb10), (lid ''12'', sb12), (lid ''14'', sb14)]"
-
-value "execute_function simple_branching_main empty_state"
-
-
-lemma "verify_function (annotated
-      simple_branching_main
-
-      [
-        (lid ''14'', (\<lambda>s. \<exists>a v. register_\<alpha> s (reg (lid ''3'')) = Some (addr a) \<and> memory_\<alpha> s a = Some (Some (vi32 v)) \<and> (v = 4 \<or> v = 3)))
-      ]
-
-      (\<lambda>(v', s'). v' = vi32 3 \<or> v' = vi32 4)
-    )"
-  unfolding simple_branching_main_def sbmain_def sb10_def sb12_def sb14_def
-  by vcg
-
-section "Phi Node"
-
-definition pmain :: "llvm_instruction_block" where
-  "pmain = ([],[
-    alloca (lid ''1'') i32 (Some 4),
-    alloca (lid ''2'') i32 (Some 4),
-    alloca (lid ''3'') i32 (Some 4),
-    alloca (lid ''4'') i32 (Some 4),
-    store i32 (val (vi32 0)) (reg (lid ''1'')) (Some 4),
-    store i32 (val (vi32 1)) (reg (lid ''2'')) (Some 4),
-    load (lid ''5'') i32 (reg (lid ''2'')) (Some 4),
-    icmp (lid ''6'') False comp_ne i32 (reg (lid ''5'')) (val (vi32 0))],
-    br_i1 (reg (lid ''6'')) (lid ''7'') (lid ''9'')
-  )"
-
-definition p7 :: "llvm_instruction_block" where
-  "p7 = ([],[
-    store i32 (val (vi32 1)) (reg (lid ''4'')) (Some 4),
-    load (lid ''8'') i32 (reg (lid ''4'')) (Some 4)],
-    br_label (lid ''10'')
-  )"
-
-definition p9 :: "llvm_instruction_block" where
-  "p9 = ([],[],
-    br_label (lid ''10'')
-  )"
-
-definition p10 :: "llvm_instruction_block" where
-  "p10 = ([phi (lid ''11'') i32 [(lid ''7'', reg (lid ''8'')), (lid ''9'', val (vi32 0))]],[
-    store i32 (reg (lid ''11'')) (reg (lid ''3'')) (Some 4),
-    load (lid ''12'') i32 (reg (lid ''3'')) (Some 4)],
-    ret i32 (reg (lid ''12''))
-  )"
-
-definition phi_main :: "llvm_function" where
-  "phi_main = func (func_def ''main'' i32) [(lid ''main'', pmain), (lid ''7'', p7), (lid ''9'', p9), (lid ''10'', p10)]"
-
-
-lemma "verify_function (annotated
-    phi_main
-
-    (map_of [
-      (lid ''10'',  (\<lambda>s. \<exists>v a3. register_\<alpha> s (reg (lid ''8'')) = Some v \<and> register_\<alpha> s (reg (lid ''3'')) = Some (addr a3) \<and> memory_\<alpha> s a3 \<noteq> None))
-    ])
-
-    (\<lambda>(v, s). v = (the (register_\<alpha> s (reg (lid ''8'')))) \<or> v = vi32 0)
-  )"
-  unfolding phi_main_def pmain_def p7_def p9_def p10_def
-  by vcg
-
-
-(*
-int main() {
-    int y = 1;
-    int x = y?1:0;
-    return x;
-}
-
-define dso_local i32 @main() #0 {
-  %1 = alloca i32, align 4
-  %2 = alloca i32, align 4
-  %3 = alloca i32, align 4
-  %4 = alloca i32, align 4
-  store i32 0, ptr %1, align 4
-  store i32 1, ptr %2, align 4
-  %5 = load i32, ptr %2, align 4
-  %6 = icmp ne i32 %5, 0
-  br i1 %6, label %7, label %9
-
-7:
-  store i32 1, ptr %4, align 4
-  %8 = load i32, ptr %4, align 4
-  br label %10
-
-9:
-  br label %10
-
-10:
-  %11 = phi i32 [ %8, %9 ], [ 0, %9 ]
-  store i32 %11, ptr %3, align 4
-  %12 = load i32, ptr %3, align 4
-  ret i32 %12
-}
-*)
-
-value "execute_function phi_main empty_state"
-
-
-
 section "Mult Function"
 
 definition mult_entry :: "llvm_instruction_block" where
@@ -322,28 +174,37 @@ definition mult_function :: llvm_function where
     ]
   )"
 
-definition create_pres :: "(llvm_identifier * bool * (llvm_identifier option * precondition) list) list \<Rightarrow> preconditions" where
-  "create_pres pres = (\<lambda>p l.
-    case map_of pres l of
-      Some (True, ps) \<Rightarrow> map_of ps p
-    | Some (False, (_, pre)#ps) \<Rightarrow> Some pre
-    | None \<Rightarrow> None)"
 
+(*
 method wipe_assumptions = ((thin_tac "_ = _")+)?, ((thin_tac "register_contains_value _ _ _")+)?, ((thin_tac "_ <s _")+)?, ((thin_tac "_ \<le>s _")+)?
 method vcg_verify_function = rule asm_rl[of "verify_function _ _ _ _"], unfold verify_function_def, unfold first_label_def, intro allI impI, elim conjE
 method vcg_wp_steps = rule asm_rl[of "wp_steps _ _ _"], rule wp_steps_intro, blast, simp
 method vcg_block uses defs = unfold defs, block_vcg, unfold wp_steps_intro_post_def create_pres_def, simp (no_asm)
+*)
+
+
 
 lemma
-  "verify_function
+  "floyd_vc
     mult_function
-    mult_pre
-    (create_pres [
-      (lid ''for.body'', False, [(None, mult_body_pre)]),
-      (lid ''for.end'', False, [(None, mult_end_pre)])
-    ])
+    [
+      ((None, lid ''entry''),   mult_pre),
+      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
+      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
+    ]
     mult_post"
   unfolding mult_function_def
+  apply (rule floyd_vc_intro)
+    subgoal
+      unfolding first_label_def
+      by simp
+  apply (simp only: predicate_for_all.simps HOL.simp_thms(21))
+    apply (intro conjI allI impI; unfold annotation_holds_def has_annotation_def; simp; unfold floyd_cond_def)
+      apply (rule wp_annotated_step_intro)
+      apply (rule wp_step_intro) apply force
+    unfolding mult_entry_def 
+      apply (intro wp_intro)
+    subgoal for s
   apply vcg_verify_function
   apply vcg_wp_steps
   apply (vcg_block defs: mult_entry_def mult_pre_def)

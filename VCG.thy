@@ -1,5 +1,5 @@
 theory VCG
-  imports "Blocks"
+  imports "Steps"
 begin
 
 section "Hoare definition"
@@ -13,6 +13,10 @@ lemma hoare_intro:
   using assms
   unfolding hoare_def
   by simp
+
+
+definition verify :: "llvm_function \<Rightarrow> preconditions \<Rightarrow> postcondition \<Rightarrow> bool" where  "verify f pres post \<equiv> floyd_vc f pres post"
+
 
 
 
