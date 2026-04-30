@@ -25,9 +25,10 @@ definition mult_pre :: "precondition" where
   "mult_pre = (\<lambda>s. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 b) s
-  \<and> - (2 ^ 31) \<le>s a * b
-  \<and> a * b <s 2 ^ 31
+  \<and> - (2 ^ 31) \<le> sint a * sint b
+  \<and> sint a * sint b \<le> 2 ^ 31 - 1
   \<and> 0 <s b
+  \<and> b \<le>s 2 ^ 31 - 1
   )"
 
 (*
@@ -79,17 +80,18 @@ definition mult_body :: "llvm_instruction_block" where
 definition mult_body_pre :: "precondition" where
   "mult_body_pre = (\<lambda>s. \<exists>a b i.
     register_contains_value (lid ''a'') (vi32 a) s
-  \<and> register_contains_value (lid ''b'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> register_contains_address_with_value (lid ''a.addr'') (vi32 a) s
   \<and> register_contains_address_with_value (lid ''b.addr'') (vi32 b) s
   \<and> register_contains_address_with_value (lid ''i'') (vi32 i) s
   \<and> register_contains_address_with_value (lid ''result'') (vi32 (a * i)) s
   \<and> registers_contain_unique_addresses [lid ''a.addr'', lid ''b.addr'', lid ''i'', lid ''result''] s
-  \<and> - (2 ^ 31) \<le>s a * b
-  \<and> a * b <s 2 ^ 31
+  \<and> - (2 ^ 31) \<le> sint a * sint b
+  \<and> sint a * sint b \<le> 2 ^ 31 - 1
   \<and> 0 <s b
   \<and> 0 \<le>s i
   \<and> i <s b
+  \<and> b \<le>s 2 ^ 31 - 1
   \<and> i <s 2 ^ 31 - 1
   )"
 
@@ -136,22 +138,24 @@ definition mult_end :: "llvm_instruction_block" where
 definition mult_end_pre :: "precondition" where
   "mult_end_pre = (\<lambda>s. \<exists>a b i.
     register_contains_value (lid ''a'') (vi32 a) s
-  \<and> register_contains_value (lid ''b'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> register_contains_address_with_value (lid ''a.addr'') (vi32 a) s
   \<and> register_contains_address_with_value (lid ''b.addr'') (vi32 b) s
   \<and> register_contains_address_with_value (lid ''i'') (vi32 i) s
   \<and> register_contains_address_with_value (lid ''result'') (vi32 (a * i)) s
   \<and> registers_contain_unique_addresses [lid ''a.addr'', lid ''b.addr'', lid ''i'', lid ''result''] s
-  \<and> - (2 ^ 31) \<le>s a * b
-  \<and> a * b <s 2 ^ 31
+  \<and> - (2 ^ 31) \<le> sint a * sint b
+  \<and> sint a * sint b \<le> 2 ^ 31 - 1
   \<and> 0 <s b
+  \<and> 0 \<le>s i
+  \<and> i <s 2 ^ 31 - 1
   \<and> i = b
   )"
 
 definition mult_post :: "postcondition" where
   "mult_post = (\<lambda>s v. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
-  \<and> register_contains_value (lid ''b'') (vi32 a) s
+  \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> v = Some (vi32 (a * b))
   )"
 
@@ -182,6 +186,45 @@ method vcg_wp_steps = rule asm_rl[of "wp_steps _ _ _"], rule wp_steps_intro, bla
 method vcg_block uses defs = unfold defs, block_vcg, unfold wp_steps_intro_post_def create_pres_def, simp (no_asm)
 *)
 
+method unfold_floyd_vc uses defs =
+  rule asm_rl[of "floyd_vc _ _ _"],
+  rule floyd_vc_intro,
+  unfold defs,
+  (unfold first_label_def; simp; fail)?,
+  simp only: predicate_for_all.simps HOL.simp_thms(21),
+  (intro conjI allI impI; unfold annotation_holds_def has_annotation_def; simp; unfold floyd_cond_def)
+
+method instantiate_block_def =
+  rule asm_rl[of "map_of _ _ = Some _"],
+  force
+
+method unfold_wp_step =
+  rule asm_rl[of "wp_step _ _ _"],
+  rule wp_step_intro,
+  instantiate_block_def
+
+method unfold_wp_annotated_step =
+  rule asm_rl[of "wp_annotated_step _ _ _ _"],
+  rule wp_annotated_step_intro,
+  unfold_wp_step
+
+
+method unfold_endgoal =
+  rule asm_rl[of "annotation_holds _ _ _"],
+  unfold annotation_holds_def,
+  simp (no_asm)
+
+
+method unfold_wp_steps_until =
+  rule asm_rl[of "wp_steps_until _ _ _ _"],
+  rule wp_steps_until_intro;
+  (unfold has_annotation_def; force; fail)?;
+  (thin_tac "\<not>has_annotation _ _" | thin_tac "has_annotation _ _")?;
+  (unfold_wp_step | unfold_endgoal)?
+
+
+lemma i_no_overflow_impl_positive: "0 \<le>s i \<Longrightarrow> (i::word32) <s 2^31 - 1 \<Longrightarrow> 0 \<le>s (i+1)"
+  sorry
 
 
 lemma
@@ -193,204 +236,64 @@ lemma
       ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
     ]
     mult_post"
-  unfolding mult_function_def
-  apply (rule floyd_vc_intro)
-    subgoal
-      unfolding first_label_def
-      by simp
-  apply (simp only: predicate_for_all.simps HOL.simp_thms(21))
-    apply (intro conjI allI impI; unfold annotation_holds_def has_annotation_def; simp; unfold floyd_cond_def)
-      apply (rule wp_annotated_step_intro)
-      apply (rule wp_step_intro) apply force
-    unfolding mult_entry_def 
-      apply (intro wp_intro)
-    subgoal for s
-  apply vcg_verify_function
-  apply vcg_wp_steps
-  apply (vcg_block defs: mult_entry_def mult_pre_def)
-  apply vcg_wp_steps
-  apply (vcg_block defs: mult_cond_def)
-  apply (simp only: if_True)
-  apply (intro conjI)
-  subgoal unfolding mult_body_pre_def by attempt_endgoal
-  apply wipe_assumptions
-  apply auto
-  apply (unfold mult_body_pre_def)
-  apply clean_assms
-  apply (rule wp_steps_intro) apply blast apply simp
-  unfolding mult_body_def apply block_vcg
-  apply (rule wp_intro) apply unfold_shorthands apply clean_assms oops
-  
-  
+  apply (unfold_floyd_vc defs: mult_function_def)
 
-                 
-lemma "verify_function mult_annotated"
-  unfolding mult_annotated_def mult_function_def mult_entry_def mult_cond_def mult_body_def mult_inc_def mult_end_def mult_entry_pre_def mult_body_pre_def mult_end_pre_def mult_post_def
-  apply vcg_step (* split into annotated branch-points with proper previous block: entry, for.cond \<rightarrow> for.body, for.cond \<rightarrow> for.end *)
-  apply vcg_step (* turn into hoare triple *)
-  apply vcg_step (* hoare triple of single block with complex post-condition *)
-  apply vcg_step (* wp with pre-condition as assumption *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* finish block execution, branch *)
-  apply vcg_step (* case distinction *)
-  apply vcg_step (* branched to basic block without annotation \<rightarrow> new hoare triple *)
-  apply vcg_step (* hoare triple of single block w/ complex post-condition*)
-  apply vcg_step (* wp... *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* end of block, branch based on boolean*)
-  apply vcg_step (* case distinction *)
-  apply vcg_step (* branched on boolean, undeterminate, so we get extra subgoal for each case: 0 <s a and \<not>0 <s a *)
-  (* first subgoal assumes 0 <s a, in which case we branch to for.body, which has a pre-condition we can prove *)
-  apply vcg_step (* second subgoal assumed \<not>0 <s a, branch to for.end, which also has a pre-condition we can prove*)
-  apply vcg_step (* _all_ executions starting from block entry with its pre-condition holding have been proven*)
-  (*continue with execution from for.body*)
-  apply vcg_step (* hoare triple with the pre-condition of for.body, executing starting from for.body, with for.cond as previous block *)
-  apply vcg_step (* hoare of single block *)
-  apply vcg_step (* wp *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* end of block, unconditional branch to for.inc *)
-  apply vcg_step (* cases *)
-  apply vcg_step (* for.inc has no pre-cond \<rightarrow> new hoare triple *)
-  apply vcg_step (* hoare over single block *)
-  apply vcg_step (* wp... *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* end of block, unconditional branch to for.cond *)
-  apply vcg_step (* cases *)
-  apply vcg_step (* for.cond has no pre-cond \<rightarrow> new hoare triple *)
-  apply vcg_step (* hoare over single block *)
-  apply vcg_step (* wp... *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* conditional branch to for.body or for.end depending on i+1 <s b *)
-  apply vcg_step
-  apply vcg_step (* new subgoals, one assumes i+1 <s b, branch to for.body which has pre-condition to prove *)
-  apply vcg_step (* other assumes \<not>i+1 <s b, branch to for.end, pre-condition to prove *)
-  apply vcg_step (* again, all executions starting from for.body have been proven to satisfy all following pre-conditions*)
-  (* only execution from for.end remains *)
-  apply vcg_step (* hoare triple from for.end with its pre-cond *)
-  apply vcg_step (* hoare over single block *)
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step (* end of block, return value from reg %5*)
-  apply vcg_step (* cases *)
-  apply vcg_step (* return val, so show the post-condition of the function holds for that value *)
-  apply vcg_step (* done! all possible executions satisfying the pre-condition of the function have been verified *)
+  subgoal (* entry \<rightarrow> cond \<rightarrow> body *)
+    apply (unfold_wp_annotated_step)
+    apply (block_vcg defs: mult_entry_def mult_pre_def)
+    apply (unfold_wp_steps_until)
+    apply (block_vcg defs: mult_cond_def)
+    apply (unfold_wp_steps_until)
+    apply (unfold mult_body_pre_def)
+    apply (unfold_shorthands)
+    apply (intro conjI exI) apply auto by (auto split: if_splits)
+
+  subgoal for s (* body \<rightarrow> inc \<rightarrow> cond \<rightarrow> body or end *)
+    apply (unfold_wp_annotated_step)
+    apply (block_vcg_dbg defs: mult_body_def mult_body_pre_def)
+    subgoal sorry
+    subgoal sorry
+    apply (block_vcg)
+    apply (unfold_wp_steps_until)
+    apply (block_vcg_dbg defs: mult_inc_def)
+    subgoal sorry
+    apply block_vcg
+    apply (unfold_wp_steps_until)
+    apply (block_vcg defs: mult_cond_def)
+    subgoal
+      apply (rule wp_steps_until_intro)
+      defer
+      unfolding has_annotation_def apply simp
+      unfolding annotation_holds_def
+      apply (simp (no_asm)) 
+      apply (rule exI) apply (intro conjI) apply simp
+      apply (rule exI) apply (intro conjI) apply simp apply simp apply simp
+      apply (rule exI) apply (rule conjI, simp)+
+      apply (metis distrib_left mult.right_neutral) apply (rule conjI, simp)+ using i_no_overflow_impl_positive by auto
+    subgoal for a b i aa ab ac ad ae af ag ah ai aj ak al am an 
+      apply (rule wp_steps_until_intro)
+      defer
+      unfolding has_annotation_def apply simp
+      unfolding annotation_holds_def
+      apply (simp (no_asm)) unfolding mult_end_pre_def apply unfold_shorthands
+      apply (rule exI | rule conjI, simp)+
+       apply (metis distrib_left mult.right_neutral) apply (rule conjI, simp)+
+      subgoal sorry
+      subgoal sorry
+      done
+    done
+
+  subgoal (* end \<rightarrow> return *)
+    apply (unfold_wp_annotated_step)
+    apply (block_vcg defs: mult_end_def mult_end_pre_def)
+    apply (unfold_wp_steps_until)
+    unfolding mult_post_def
+    apply unfold_shorthands
+    by fastforce
+
   done
 
-lemma "verify_function mult_annotated"
-  unfolding mult_annotated_def mult_function_def 
-  apply vcg_step apply simp
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step unfolding mult_entry_pre_def
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step apply simp unfolding register_contains_value_def
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step unfolding mult_body_pre_def
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
-  apply vcg_step
+
 
 (*
 1 define dso_local noundef i32 @mult(int, int)(i32 noundef %a, i32 noundef %b) { llvm

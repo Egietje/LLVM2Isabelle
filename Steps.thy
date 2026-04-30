@@ -128,7 +128,7 @@ definition "annotation_holds fs \<equiv>
   (case fs of
     berr \<Rightarrow> False
   | bret s v \<Rightarrow> post s v
-  | bbranch s p l \<Rightarrow> has_annotation fs \<and>
+  | bbranch s p l \<Rightarrow> 
     (case map_of annotations (p,l) of
       None \<Rightarrow> False
     | Some annot \<Rightarrow> annot s
@@ -227,7 +227,7 @@ lemma floyd_vc_impl_annotation_holds:
   shows "\<forall>fs fs'. annotation_holds fs \<and> fs \<Rightarrow> fs' \<longrightarrow> annotation_holds fs'"
   using assms
   unfolding floyd_vc_def floyd_cond_def wp_annotated_step_def has_annotation_def annotated_step_def annotation_holds_def has_annotation_def step_def
-  by (auto split: flow_state.splits; fastforce)
+  apply (auto split: flow_state.splits) by force+
   
 
 
@@ -278,7 +278,7 @@ proof -
         then obtain fs1 where fs1def1: "fs \<rightarrow> fs1" and fs1def: "fs1 \<rightarrow>^n' fs'"
           using less ndef
           by auto
-      
+
         obtain fsa m where "step_until\<^sup>*\<^sup>* fs1 fsa" "has_annotation fsa \<or> is_berr fsa" "fsa \<rightarrow>^m fs'" "m \<le> n'"
           using fs1def exists_first_cutpoint annot
           by blast

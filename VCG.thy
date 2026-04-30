@@ -2,32 +2,6 @@ theory VCG
   imports "Steps"
 begin
 
-section "Hoare definition"
-
-definition hoare :: "('a \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarrow> 'b result) \<Rightarrow> ('b \<Rightarrow> bool) \<Rightarrow> bool" where
-  "hoare P c Q \<equiv> (\<forall>x. P x \<longrightarrow> wp (c x) Q)"
-
-lemma hoare_intro:
-  assumes "\<And>s. P s \<Longrightarrow> wp (c s) Q"
-  shows "hoare P c Q"
-  using assms
-  unfolding hoare_def
-  by simp
-
-
-definition verify :: "llvm_function \<Rightarrow> preconditions \<Rightarrow> postcondition \<Rightarrow> bool" where  "verify f pres post \<equiv> floyd_vc f pres post"
-
-
-
-
-section "Annotations"
-
-type_synonym block_preconditions = "(llvm_identifier * (state \<Rightarrow> bool)) list"
-type_synonym function_postcondition = "(llvm_value option * state) \<Rightarrow> bool"
-datatype annotated_function = annotated "llvm_function" "block_preconditions" "function_postcondition"
-
-
-
 section "Useful Shorthands"
 
 find_theorems "_ \<and> True"
@@ -89,19 +63,19 @@ method clean_memory = repeat_minus_one thin_tac_mem
 
 method clean_assms = ((elim exE conjE)+)?, (simp only: contract_updates)?; clean_registers?; clean_memory?; (simp only: triv_forall_equality)?
 
-method unfold_shorthands = simp only: registers_contain_unique_addresses.simps unique_addresses.simps unique_addresses_rec.simps unique_address.simps register_contains_value_def register_contains_allocated_address_def register_contains_address_with_value_def HOL.simp_thms(21)
+method unfold_shorthands = simp only: registers_contain_unique_addresses.simps unique_addresses.simps unique_addresses_rec.simps unique_address.simps register_contains_value_def register_contains_allocated_address_def register_contains_address_with_value_def HOL.simp_thms(21), clean_assms
 
 subsection "Subgoal Solving Methods"
 
-method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (addr _)"], unfold_shorthands?, (fastforce | simp)?; fail
-method sub_memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"], unfold_shorthands?, (fastforce | simp)?; fail
-method sub_register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"], unfold_shorthands?, (fastforce | simp)?; fail
-method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"], unfold_shorthands?, (fastforce | simp split: if_splits)?; fail
-method sub_add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]), unfold_shorthands?, (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
-method sub_icmp_same_signs = (rule asm_rl[of "if _ then same_signs32 _ _ else True"] | rule asm_rl[of "if _ then same_signs64 _ _ else True"]), unfold_shorthands?, (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
-method sub_map_of_some = rule asm_rl[of "map_of _ _ = Some _"], unfold_shorthands?; (fastforce | simp)?; fail
-method sub_distinct_first = rule asm_rl[of "distinct (map fst _)"], unfold_shorthands?; (fastforce | simp)?; fail
-method sub_some_refl = rule asm_rl[of "Some _ = Some _"], unfold_shorthands?; (rule refl)?; fail
+method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (addr _)"], (fastforce | simp)?; fail
+method sub_memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"], (fastforce | simp)?; fail
+method sub_register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"], (fastforce | simp)?; fail
+method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"], (fastforce | simp split: if_splits)?; fail
+method sub_add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]), (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
+method sub_icmp_same_signs = (rule asm_rl[of "if _ then same_signs32 _ _ else True"] | rule asm_rl[of "if _ then same_signs64 _ _ else True"]), (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
+method sub_map_of_some = rule asm_rl[of "map_of _ _ = Some _"], (fastforce | simp)?; fail
+method sub_distinct_first = rule asm_rl[of "distinct (map fst _)"], (fastforce | simp)?; fail
+method sub_some_refl = rule asm_rl[of "Some _ = Some _"], (rule refl)?; fail
 
 method solve_subgoal = sub_instantiate_register_address | sub_memory_allocated | sub_register_value
                      | sub_memory_value | sub_add_poison | sub_icmp_same_signs | sub_map_of_some
@@ -156,13 +130,11 @@ method term_vcg_step = strat_branch_i1 | strat_branch_label | strat_return
 
 subsection "Block VCG Methods"
 
-method unfold_hoare = rule asm_rl[of "hoare _ (execute_block _ _) _"], rule hoare_intro
+method block_vcg_step = phi_vcg_step | instr_vcg_step | term_vcg_step
+method block_vcg_step_dbg = phi_vcg_step_dbg | instr_vcg_step_dbg | term_vcg_step_dbg
 
-method block_vcg_step = unfold_hoare | phi_vcg_step | instr_vcg_step | term_vcg_step
-method block_vcg_step_dbg = unfold_hoare | phi_vcg_step_dbg | instr_vcg_step_dbg | term_vcg_step_dbg
-
-method block_vcg = block_vcg_step+
-method block_vcg_dbg = block_vcg_step_dbg+
+method block_vcg uses defs = (unfold defs)?, unfold_shorthands?, block_vcg_step+, (simp (no_asm))?, (intro conjI impI)?
+method block_vcg_dbg uses defs = (unfold defs)?, unfold_shorthands?, block_vcg_step_dbg+, (simp (no_asm))?, (intro conjI impI)?
 
 
 subsection "Multi-Block VCG Methods"
@@ -185,7 +157,7 @@ method vcg = vcg_step+
 method vcg_dbg = vcg_step_dbg+
 *)
 
-method attempt_endgoal_strat = unfold_shorthands?; (force | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
+method attempt_endgoal_strat = (force | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
 method match_all_but_endgoal = rule asm_rl[of "wp _ _"]
 
 method attempt_endgoal = (match_all_but_endgoal | attempt_endgoal_strat); fail
