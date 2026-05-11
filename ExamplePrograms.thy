@@ -1,6 +1,147 @@
 theory ExamplePrograms
-  imports "VCG" "HOL-Library.AList_Mapping"
+  imports "VCG" "HOL-Library.AList_Mapping" "Word_Lib/Word_32" "Word_Lib/Word_64"
 begin
+
+section "Word Lemma Bundle"
+
+bundle word_bundle
+begin
+
+lemma lt_imp_le: "(i::word32) <s 2 ^ 31 - 1 \<Longrightarrow> i \<le>s 2 ^ 31 - 2"
+  by (simp add: word_sle_eq word_sless_alt)
+lemma le_imp_lt: "i \<le>s 2 ^ 31 - 2 \<Longrightarrow> (i::word32) <s 2 ^ 31 - 1"
+  by (simp add: word_sle_eq word_sless_alt)
+
+lemma lt_inc_nlt_imp_eq[simp]: "(i::word32) <s (b::word32) \<Longrightarrow> \<not> i+1 <s b \<Longrightarrow> i+1 = b"
+  apply (simp add: word_sle_eq word_sless_alt)
+  by (smt (verit, ccfv_threshold) diff_add_cancel signed_arith_ineq_checks_to_eq_word32(1,2) signed_minus_1
+      signed_take_bit_int_eq_self signed_take_bit_int_greater_eq_minus_exp sint_word_ariths(1,8) word_sint.Rep_eqD)
+
+lemma lt_inc_nlt_mult_eq[simp]: "(i::word32) <s (b::word32) \<Longrightarrow> \<not> i+1 <s b \<Longrightarrow> a*i+a = a*b"
+  by (metis (no_types, lifting) distrib_left lt_inc_nlt_imp_eq mult_numeral_1_right numeral_One)
+
+lemma i_no_overflow_impl_positive[simp]: "0 \<le>s i \<Longrightarrow> (i::word32) <s 2^31 - 1 \<Longrightarrow> 0 \<le>s (i+1)"
+  by (smt (verit, del_insts) add_diff_eq diff_add_cancel diff_numeral_special(10) of_int_eq_id signed_minus_1
+      signed_take_bit_int_eq_self signed_take_bit_int_eq_self_iff signed_take_bit_int_greater_eq_minus_exp sint_word_ariths(1,2,8)
+      word_sle_eq word_sless_alt)
+
+lemma i_incr_no_overflow_impl_not_negative[simp]: "0 \<le>s (i::word32) \<Longrightarrow> (i::word32) <s 2^31 - 1 \<Longrightarrow> \<not> i + 1 <s 0"
+  by (smt (verit, best) i_no_overflow_impl_positive word_sle_eq word_sless_alt)
+
+lemma i_bounds_no_overflow_neg[simp]: "- (2 ^ 31) \<le> sint (a::word32) * sint (b::word32) \<Longrightarrow>
+    sint a * sint b \<le> 2 ^ 31 - 1 \<Longrightarrow>
+    0 \<le>s (i::word32) \<Longrightarrow>
+    i <s b \<Longrightarrow>
+    b \<le>s 2 ^ 31 - 1 \<Longrightarrow>
+    i <s 2 ^ 31 - 1 \<Longrightarrow>
+    a <s 0 \<Longrightarrow> a * i <s 0 \<Longrightarrow> \<not> 0 \<le>s a * i + a"
+proof -
+  assume bounds: "- (2^31) \<le> sint a * sint b" "sint a * sint b \<le> 2^31 - 1"
+  assume hi: "0 \<le>s i" "i <s b" "b \<le>s 2^31 - 1" "i <s 2^31 - 1"
+  assume neg: "a <s 0" "a * i <s 0"
+  have sa: "sint a < 0"
+    using neg(1) 
+    by (simp add: word_sless_alt)
+  have si: "0 \<le> sint i"
+    using hi(1)
+    by (simp add: word_sless_alt word_sle_eq)
+  have si_lt: "sint i < 2^31 - 1"
+    using hi(4) by (simp add: word_sless_alt word_sle_eq)
+  have sb_lt: "sint b \<le> 2^31 - 1"
+    using hi(3) by (simp add: word_sless_alt word_sle_eq)
+  have sai_neg: "sint (a * i) < 0"
+    using neg(2) by (simp add: word_sless_alt word_sle_eq)
+  have no_ovf_ai: "sint (a * i) = sint a * sint i"
+    using sai_neg sa si 
+    apply(auto intro: signed_arith_sint simp: sint_word_ariths word_sless_alt word_sle_eq)
+    by (smt (verit, del_insts) bounds(1) hi(2) mult_eq_0_iff mult_less_cancel_left_disj signed_take_bit_int_eq_self
+        word_sless_alt)
+  have no_ovf_sum: "sint (a * i + a) = sint (a * i) + sint a"
+    proof -
+      have lo: "-(2^31) \<le> sint (a * i) + sint a"
+      proof -
+        have si_lt_b: "sint i < sint b"
+          using hi(2) by (simp add: word_sless_alt)
+        have sb_bounds: "-(2^31) \<le> sint b"
+          using si si_lt_b by auto
+        have key: "sint a * sint b \<le> sint a * (sint i + 1)"
+          using sa si_lt_b
+          by (simp add: mult_le_cancel_left_neg)
+        show ?thesis
+          using no_ovf_ai key bounds(1) right_diff_distrib' mult_cancel_left2
+          by (smt (verit) )
+      qed
+      have hi': "sint (a * i) + sint a \<le> 2^31 - 1"
+        using sai_neg sa
+        by simp
+      then show ?thesis
+        using lo hi' no_ovf_ai
+        by (simp add: sint_word_ariths signed_take_bit_int_eq_self)
+    qed
+  show "\<not> 0 \<le>s a * i + a"
+    unfolding word_sle_def
+    using no_ovf_sum sai_neg sa
+    by (smt (verit) neg(1) word_sle_def word_sle_eq word_sless_alt)
+qed
+
+lemma i_bounds_no_overflow_pos[simp]: "- (2 ^ 31) \<le> sint (a::word32) * sint (b::word32) \<Longrightarrow>
+    sint a * sint b \<le> 2 ^ 31 - 1 \<Longrightarrow>
+    0 <s b \<Longrightarrow>
+    0 \<le>s (i::word32) \<Longrightarrow>
+    i <s b \<Longrightarrow>
+    b \<le>s 2 ^ 31 - 1 \<Longrightarrow>
+    i <s 2 ^ 31 - 1 \<Longrightarrow>
+    0 \<le>s a \<Longrightarrow> 0 \<le>s a * i \<Longrightarrow> \<not> a * i + a <s 0"
+proof -
+  assume bounds: "- (2^31) \<le> sint a * sint b" "sint a * sint b \<le> 2^31 - 1"
+  assume hi: "0 \<le>s i" "i <s b" "b \<le>s 2^31 - 1" "i <s 2^31 - 1"
+  assume pos: "0 \<le>s a" "0 \<le>s a * i"
+  have sa: "sint a \<ge> 0"
+    using pos(1)
+    by (simp add: word_sle_eq)
+  have si: "0 \<le> sint i"
+    using hi(1)
+    by (simp add: word_sless_alt word_sle_eq)
+  have si_lt: "sint i < 2^31 - 1"
+    using hi(4) by (simp add: word_sless_alt word_sle_eq)
+  have sb_lt: "sint b \<le> 2^31 - 1"
+    using hi(3) by (simp add: word_sless_alt word_sle_eq)
+  have sai_neg: "sint (a * i) \<ge> 0"
+    using pos(2) by (simp add: word_sless_alt word_sle_eq)
+  have no_ovf_ai: "sint (a * i) = sint a * sint i"
+    using sai_neg sa si 
+    apply(auto intro: signed_arith_sint simp: sint_word_ariths word_sless_alt word_sle_eq)
+    by (smt (verit, best) bounds(2) hi(2) mult_less_cancel_left_disj signed_take_bit_int_eq_self word_sless_alt
+        zero_le_mult_iff)
+  have no_ovf_sum: "sint (a * i + a) = sint (a * i) + sint a"
+    proof -
+      have lo: "-(2^31) \<le> sint (a * i) + sint a"
+        using sa sai_neg by force
+      have hi': "sint (a * i) + sint a \<le> 2^31 - 1"
+      proof -
+        have si_lt_b: "sint i < sint b"
+          using hi(2) by (simp add: word_sless_alt)
+        have sb_bounds: "-(2^31) \<le> sint b"
+          using si si_lt_b by auto
+        have key: "sint a * sint b \<ge> sint a * (sint i + 1)"
+          using sa si_lt_b
+          by (smt (verit, best) mult_less_cancel_left_disj)
+        show ?thesis
+          using no_ovf_ai key bounds(2) right_diff_distrib' mult_cancel_left2
+          by (smt (verit, best))
+      qed
+      then show ?thesis
+        using lo hi' no_ovf_ai
+        by (simp add: sint_word_ariths signed_take_bit_int_eq_self)
+    qed
+  show ?thesis
+    unfolding word_sle_def
+    using no_ovf_sum sai_neg sa 
+    by (smt (verit) pos(1) word_sle_def word_sle_eq word_sless_alt)
+qed
+
+end
+
 
 section "Mult Function"
 
@@ -179,180 +320,7 @@ definition mult_function :: llvm_function where
   )"
 
 
-(*
-method wipe_assumptions = ((thin_tac "_ = _")+)?, ((thin_tac "register_contains_value _ _ _")+)?, ((thin_tac "_ <s _")+)?, ((thin_tac "_ \<le>s _")+)?
-method vcg_verify_function = rule asm_rl[of "verify_function _ _ _ _"], unfold verify_function_def, unfold first_label_def, intro allI impI, elim conjE
-method vcg_wp_steps = rule asm_rl[of "wp_steps _ _ _"], rule wp_steps_intro, blast, simp
-method vcg_block uses defs = unfold defs, block_vcg, unfold wp_steps_intro_post_def create_pres_def, simp (no_asm)
-*)
-
-method unfold_floyd_vc uses defs =
-  rule asm_rl[of "floyd_vc _ _ _"],
-  rule floyd_vc_intro,
-  unfold defs,
-  (unfold first_label_def; simp; fail)?,
-  simp only: predicate_for_all.simps HOL.simp_thms(21),
-  (intro conjI allI impI; unfold annotation_holds_def has_annotation_def; simp; unfold floyd_cond_def)
-
-method instantiate_block_def =
-  rule asm_rl[of "map_of _ _ = Some _"],
-  force
-
-method unfold_wp_step =
-  rule asm_rl[of "wp_step _ _ _"],
-  rule wp_step_intro,
-  instantiate_block_def
-
-method unfold_wp_annotated_step =
-  rule asm_rl[of "wp_annotated_step _ _ _ _"],
-  rule wp_annotated_step_intro,
-  unfold_wp_step
-
-
-method unfold_endgoal =
-  rule asm_rl[of "annotation_holds _ _ _"],
-  unfold annotation_holds_def,
-  simp (no_asm)
-
-
-method unfold_wp_steps_until =
-  rule asm_rl[of "wp_steps_until _ _ _ _"],
-  rule wp_steps_until_intro;
-  (unfold has_annotation_def; force; fail)?;
-  (thin_tac "\<not>has_annotation _ _" | thin_tac "has_annotation _ _")?;
-  (unfold_wp_step | unfold_endgoal)?
-
-
-
-lemma lt_imp_le: "(i::word32) <s 2 ^ 31 - 1 \<Longrightarrow> i \<le>s 2 ^ 31 - 2"
-  by (simp add: word_sle_eq word_sless_alt)
-lemma le_imp_lt: "i \<le>s 2 ^ 31 - 2 \<Longrightarrow> (i::word32) <s 2 ^ 31 - 1"
-  by (simp add: word_sle_eq word_sless_alt)
-
-lemma lt_inc_nlt_imp_eq[simp]: "(i::word32) <s (b::word32) \<Longrightarrow> \<not> i+1 <s b \<Longrightarrow> i+1 = b"
-  apply (simp add: word_sle_eq word_sless_alt)
-  by (smt (verit, ccfv_threshold) diff_add_cancel signed_arith_ineq_checks_to_eq_word32(1,2) signed_minus_1
-      signed_take_bit_int_eq_self signed_take_bit_int_greater_eq_minus_exp sint_word_ariths(1,8) word_sint.Rep_eqD)
-
-lemma i_no_overflow_impl_positive[simp]: "0 \<le>s i \<Longrightarrow> (i::word32) <s 2^31 - 1 \<Longrightarrow> 0 \<le>s (i+1)"
-  by (smt (verit, del_insts) add_diff_eq diff_add_cancel diff_numeral_special(10) of_int_eq_id signed_minus_1
-      signed_take_bit_int_eq_self signed_take_bit_int_eq_self_iff signed_take_bit_int_greater_eq_minus_exp sint_word_ariths(1,2,8)
-      word_sle_eq word_sless_alt)
-
-lemma i_bounds_no_overflow_neg[simp]: "- (2 ^ 31) \<le> sint (a::word32) * sint (b::word32) \<Longrightarrow>
-    sint a * sint b \<le> 2 ^ 31 - 1 \<Longrightarrow>
-    0 \<le>s (i::word32) \<Longrightarrow>
-    i <s b \<Longrightarrow>
-    b \<le>s 2 ^ 31 - 1 \<Longrightarrow>
-    i <s 2 ^ 31 - 1 \<Longrightarrow>
-    a <s 0 \<Longrightarrow> a * i <s 0 \<Longrightarrow> \<not> 0 \<le>s a * i + a"
-proof -
-  assume bounds: "- (2^31) \<le> sint a * sint b" "sint a * sint b \<le> 2^31 - 1"
-  assume hi: "0 \<le>s i" "i <s b" "b \<le>s 2^31 - 1" "i <s 2^31 - 1"
-  assume neg: "a <s 0" "a * i <s 0"
-  have sa: "sint a < 0"
-    using neg(1) 
-    by (simp add: word_sless_alt)
-  have si: "0 \<le> sint i"
-    using hi(1)
-    by (simp add: word_sless_alt word_sle_eq)
-  have si_lt: "sint i < 2^31 - 1"
-    using hi(4) by (simp add: word_sless_alt word_sle_eq)
-  have sb_lt: "sint b \<le> 2^31 - 1"
-    using hi(3) by (simp add: word_sless_alt word_sle_eq)
-  have sai_neg: "sint (a * i) < 0"
-    using neg(2) by (simp add: word_sless_alt word_sle_eq)
-  have no_ovf_ai: "sint (a * i) = sint a * sint i"
-    using sai_neg sa si 
-    apply(auto intro: signed_arith_sint simp: sint_word_ariths word_sless_alt word_sle_eq)
-    by (smt (verit, del_insts) bounds(1) hi(2) mult_eq_0_iff mult_less_cancel_left_disj signed_take_bit_int_eq_self
-        word_sless_alt)
-  have no_ovf_sum: "sint (a * i + a) = sint (a * i) + sint a"
-    proof -
-      have lo: "-(2^31) \<le> sint (a * i) + sint a"
-      proof -
-        have si_lt_b: "sint i < sint b"
-          using hi(2) by (simp add: word_sless_alt)
-        have sb_bounds: "-(2^31) \<le> sint b"
-          using si si_lt_b by auto
-        have key: "sint a * sint b \<le> sint a * (sint i + 1)"
-          using sa si_lt_b
-          by (simp add: mult_le_cancel_left_neg)
-        show ?thesis
-          using no_ovf_ai key bounds(1) right_diff_distrib' mult_cancel_left2
-          by (smt (verit) )
-      qed
-      have hi': "sint (a * i) + sint a \<le> 2^31 - 1"
-        using sai_neg sa
-        by simp
-      then show ?thesis
-        using lo hi' no_ovf_ai
-        by (simp add: sint_word_ariths signed_take_bit_int_eq_self)
-    qed
-  show "\<not> 0 \<le>s a * i + a"
-    unfolding word_sle_def
-    using no_ovf_sum sai_neg sa
-    by (smt (verit) neg(1) word_sle_def word_sle_eq word_sless_alt)
-qed
-
-lemma i_bounds_no_overflow_pos[simp]: "- (2 ^ 31) \<le> sint (a::word32) * sint (b::word32) \<Longrightarrow>
-    sint a * sint b \<le> 2 ^ 31 - 1 \<Longrightarrow>
-    0 <s b \<Longrightarrow>
-    0 \<le>s (i::word32) \<Longrightarrow>
-    i <s b \<Longrightarrow>
-    b \<le>s 2 ^ 31 - 1 \<Longrightarrow>
-    i <s 2 ^ 31 - 1 \<Longrightarrow>
-    0 \<le>s a \<Longrightarrow> 0 \<le>s a * i \<Longrightarrow> \<not>  a * i + a <s 0"
-proof -
-  assume bounds: "- (2^31) \<le> sint a * sint b" "sint a * sint b \<le> 2^31 - 1"
-  assume hi: "0 \<le>s i" "i <s b" "b \<le>s 2^31 - 1" "i <s 2^31 - 1"
-  assume pos: "0 \<le>s a" "0 \<le>s a * i"
-  have sa: "sint a \<ge> 0"
-    using pos(1)
-    by (simp add: word_sle_eq)
-  have si: "0 \<le> sint i"
-    using hi(1)
-    by (simp add: word_sless_alt word_sle_eq)
-  have si_lt: "sint i < 2^31 - 1"
-    using hi(4) by (simp add: word_sless_alt word_sle_eq)
-  have sb_lt: "sint b \<le> 2^31 - 1"
-    using hi(3) by (simp add: word_sless_alt word_sle_eq)
-  have sai_neg: "sint (a * i) \<ge> 0"
-    using pos(2) by (simp add: word_sless_alt word_sle_eq)
-  have no_ovf_ai: "sint (a * i) = sint a * sint i"
-    using sai_neg sa si 
-    apply(auto intro: signed_arith_sint simp: sint_word_ariths word_sless_alt word_sle_eq)
-    by (smt (verit, best) bounds(2) hi(2) mult_less_cancel_left_disj signed_take_bit_int_eq_self word_sless_alt
-        zero_le_mult_iff)
-  have no_ovf_sum: "sint (a * i + a) = sint (a * i) + sint a"
-    proof -
-      have lo: "-(2^31) \<le> sint (a * i) + sint a"
-        using sa sai_neg by force
-      have hi': "sint (a * i) + sint a \<le> 2^31 - 1"
-      proof -
-        have si_lt_b: "sint i < sint b"
-          using hi(2) by (simp add: word_sless_alt)
-        have sb_bounds: "-(2^31) \<le> sint b"
-          using si si_lt_b by auto
-        have key: "sint a * sint b \<ge> sint a * (sint i + 1)"
-          using sa si_lt_b
-          by (smt (verit, best) mult_less_cancel_left_disj)
-        show ?thesis
-          using no_ovf_ai key bounds(2) right_diff_distrib' mult_cancel_left2
-          by (smt (verit, best))
-      qed
-      then show ?thesis
-        using lo hi' no_ovf_ai
-        by (simp add: sint_word_ariths signed_take_bit_int_eq_self)
-    qed
-  show ?thesis
-    unfolding word_sle_def
-    using no_ovf_sum sai_neg sa 
-    by (smt (verit) pos(1) word_sle_def word_sle_eq word_sless_alt)
-qed
-
-
-lemma
+lemma mult_floyd:
   "floyd_vc
     mult_function
     [
@@ -361,63 +329,67 @@ lemma
       ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
     ]
     mult_post"
+  including word_bundle
   apply (unfold_floyd_vc defs: mult_function_def)
 
   subgoal (* entry \<rightarrow> cond \<rightarrow> body *)
     apply (unfold_wp_annotated_step)
-    apply (block_vcg defs: mult_entry_def mult_pre_def)
+    apply (block_vcg blocks: mult_entry_def pres: mult_pre_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg defs: mult_cond_def)
+    apply (block_vcg blocks: mult_cond_def)
     apply (unfold_wp_steps_until)
     apply (unfold mult_body_pre_def)
-    apply (unfold_shorthands)
-    apply (intro exI) apply (rule conjI) apply simp apply (rule conjI, simp) apply (rule conjI)
-    apply (intro exI) apply (rule conjI) apply simp by auto
+    by fastforce
+
 
   subgoal for s (* body \<rightarrow> inc \<rightarrow> cond \<rightarrow> body or end *)
     apply (unfold_wp_annotated_step)
-    apply (block_vcg defs: mult_body_def mult_body_pre_def)
+    apply (block_vcg blocks: mult_body_def pres: mult_body_pre_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg_dbg defs: mult_inc_def)
-    subgoal using i_no_overflow_impl_positive word_sle_eq word_sless_alt
-      by (smt (verit, best))
-    apply block_vcg
+    apply (block_vcg blocks: mult_inc_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg defs: mult_cond_def)
+    apply (block_vcg blocks: mult_cond_def)
+    
     subgoal (* cond \<rightarrow> body *)
-      apply (rule wp_steps_until_intro)
-      defer
-      unfolding has_annotation_def apply simp
-      unfolding annotation_holds_def
-      apply (simp (no_asm)) 
-      apply (rule exI) apply (intro conjI) apply simp
-      apply (rule exI) apply (intro conjI) apply simp apply simp apply simp
-      apply (rule exI) apply (rule conjI, simp)+
-      apply (metis distrib_left mult.right_neutral) apply (rule conjI, simp)+ by simp
+      apply (unfold_wp_steps_until)
+      apply (subst mult_body_pre_def)
+      by (auto simp: distrib_left)
+    
     subgoal (* cond \<longrightarrow> end *)
-      apply (rule wp_steps_until_intro)
-      defer
-      unfolding has_annotation_def apply simp
-      unfolding annotation_holds_def
-      apply (simp (no_asm)) unfolding mult_end_pre_def apply unfold_shorthands
-      apply (rule exI | rule conjI, simp)+
-      subgoal using lt_inc_nlt_imp_eq distrib_left mult_numeral_1_right numeral_One
-        by (metis (no_types, lifting) )
-      subgoal using lt_inc_nlt_imp_eq
-        by force
-      done
+      apply (unfold_wp_steps_until)
+      apply (subst mult_end_pre_def)
+      by auto
+
     done
+
 
   subgoal (* end \<rightarrow> return *)
     apply (unfold_wp_annotated_step)
-    apply (block_vcg defs: mult_end_def mult_end_pre_def)
+    apply (block_vcg blocks: mult_end_def pres: mult_end_pre_def)
     apply (unfold_wp_steps_until)
-    unfolding mult_post_def
-    apply unfold_shorthands
+    apply (subst mult_post_def)
     by fastforce
 
   done
 
+lemma mult_correct:
+  assumes "mult_pre s"
+  assumes "steps mult_function (bbranch s None (lid ''entry'')) (bret s' v)"
+  shows "mult_post s' v"
+proof -
+  have "annotation_holds [
+      ((None, lid ''entry''),   mult_pre),
+      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
+      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
+    ] mult_post (bbranch s None (lid ''entry''))"
+    using assms annotation_holds_def
+    by fastforce
+
+  then show ?thesis
+    using mult_floyd floyd_vc_impl_wp_step wp_steps_def assms empty_eq_map_of_iff flow_state.sel(1,3)
+      floyd_vc_def if_Some_None_eq_None map_of_Cons_code(2) snd_conv terminal_state_simps(2)
+    by (smt (verit))
+qed
 
 
 (*

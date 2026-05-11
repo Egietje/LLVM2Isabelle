@@ -257,6 +257,7 @@ lemma exists_first_cutpoint:
           r_into_rtranclp rtranclp.rtrancl_refl rtranclp_trans step_until_def)
   qed
 
+
 lemma steps_to_annotation_impl_annotated_steps:
   assumes path: "fs \<rightarrow>* fs'"
   assumes annot: "has_annotation fs' \<or> is_berr fs'"
@@ -292,6 +293,7 @@ proof -
     qed
   qed
 
+
 lemma floyd_vc_impl_wp_step:
   assumes "floyd_vc"
   assumes "annotation_holds fs"
@@ -299,21 +301,9 @@ lemma floyd_vc_impl_wp_step:
   shows "wp_steps fs post"
   using assms 
   unfolding floyd_vc_def floyd_cond_def wp_steps_def
-  apply (intro allI impI)
-  apply (elim conjE)
-  subgoal premises prems for fs'
-  proof -
-    have "fs \<Rightarrow>* fs'"
-      using prems steps_to_annotation_impl_annotated_steps
-      unfolding terminal_state_def has_annotation_def is_berr_def
-      by (cases fs'; simp)
-
-    then show ?thesis
-      using floyd_vc_impl_annotated_steps_hold assms prems
-      unfolding annotation_holds_def
-      by (cases fs'; fastforce)
-  qed
-  done
+  by (metis (no_types, lifting) Steps.annotation_holds_def Steps.has_annotation_def assms(1)
+      flow_state.case_eq_if floyd_vc_impl_annotated_steps_hold steps_to_annotation_impl_annotated_steps
+      terminal_non_err)
 
 end
 

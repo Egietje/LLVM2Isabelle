@@ -1,18 +1,18 @@
 theory VCG
-  imports "Steps"
+  imports "Steps" "HOL-Eisbach.Eisbach"
 begin
 
 section "Useful Shorthands"
 
 find_theorems "_ \<and> True"
 
-definition register_contains_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
+abbreviation register_contains_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
   "register_contains_value n v s \<equiv> register_\<alpha> s (reg n) = Some v"
 
-definition register_contains_allocated_address :: "llvm_identifier \<Rightarrow> state \<Rightarrow> bool" where
+abbreviation register_contains_allocated_address :: "llvm_identifier \<Rightarrow> state \<Rightarrow> bool" where
   "register_contains_allocated_address n s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
 
-definition register_contains_address_with_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
+abbreviation register_contains_address_with_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
   "register_contains_address_with_value n v s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
 
 fun unique_address :: "llvm_address \<Rightarrow> llvm_address list \<Rightarrow> bool" where
@@ -55,15 +55,12 @@ subsection "Clean Assumptions"
 method repeat_minus_one methods m =
   ((m; succeeds m; repeat_minus_one m) | succeed)
 
-method thin_tac_reg = thin_tac "register_\<alpha> _ = _"
-method clean_registers = repeat_minus_one thin_tac_reg
-
-method thin_tac_mem = thin_tac "memory_\<alpha> _ = _"
-method clean_memory = repeat_minus_one thin_tac_mem
+method clean_registers = repeat_minus_one \<open>thin_tac "register_\<alpha> _ = _"\<close>
+method clean_memory = repeat_minus_one \<open>thin_tac "memory_\<alpha> _ = _"\<close>
 
 method clean_assms = ((elim exE conjE)+)?, (simp only: contract_updates)?; clean_registers?; clean_memory?; (simp only: triv_forall_equality)?
 
-method unfold_shorthands = simp only: registers_contain_unique_addresses.simps unique_addresses.simps unique_addresses_rec.simps unique_address.simps register_contains_value_def register_contains_allocated_address_def register_contains_address_with_value_def HOL.simp_thms(21), clean_assms
+method unfold_unique_addresses = simp only: registers_contain_unique_addresses.simps unique_addresses.simps unique_addresses_rec.simps unique_address.simps HOL.simp_thms(21), clean_assms
 
 subsection "Subgoal Solving Methods"
 
@@ -133,33 +130,51 @@ subsection "Block VCG Methods"
 method block_vcg_step = phi_vcg_step | instr_vcg_step | term_vcg_step
 method block_vcg_step_dbg = phi_vcg_step_dbg | instr_vcg_step_dbg | term_vcg_step_dbg
 
-method block_vcg uses defs = (unfold defs)?, unfold_shorthands?, block_vcg_step+, (simp (no_asm))?, (intro conjI impI)?
-method block_vcg_dbg uses defs = (unfold defs)?, unfold_shorthands?, block_vcg_step_dbg+, (simp (no_asm))?, (intro conjI impI)?
+method block_vcg uses pres blocks = (subst (asm) pres)?, (subst blocks)?, unfold_unique_addresses?, block_vcg_step+, (simp (no_asm))?, \<comment> \<open>branching\<close>(intro conjI impI)?
+method block_vcg_dbg uses pres blocks = (subst (asm) pres)?, (subst blocks)?, unfold_unique_addresses?, block_vcg_step_dbg+, (simp (no_asm))?, (intro conjI impI)?
 
 
 subsection "Multi-Block VCG Methods"
 
+method unfold_floyd_vc uses defs =
+  rule asm_rl[of "floyd_vc _ _ _"],
+  rule floyd_vc_intro,
+  unfold defs,
+  (unfold first_label_def; simp; fail)?,
+  simp only: predicate_for_all.simps HOL.simp_thms(21),
+  (intro conjI allI impI; unfold annotation_holds_def has_annotation_def; simp; unfold floyd_cond_def)
+
+method instantiate_block_def =
+  rule asm_rl[of "map_of _ _ = Some _"],
+  force
+
+method unfold_wp_step =
+  rule asm_rl[of "wp_step _ _ _"],
+  rule wp_step_intro,
+  instantiate_block_def
+
+method unfold_wp_annotated_step =
+  rule asm_rl[of "wp_annotated_step _ _ _ _"],
+  rule wp_annotated_step_intro,
+  unfold_wp_step
+
+
+method unfold_endgoal =
+  rule asm_rl[of "annotation_holds _ _ _"],
+  unfold annotation_holds_def,
+  simp (no_asm)
+
+
+method unfold_wp_steps_until =
+  rule asm_rl[of "wp_steps_until _ _ _ _"],
+  rule wp_steps_until_intro;
+  (unfold has_annotation_def; force; fail)?;
+  (thin_tac "\<not>has_annotation _ _" | thin_tac "has_annotation _ _")?;
+  (unfold_wp_step | unfold_endgoal)?
+
+
 method clean_goal' = (simp (no_asm_simp) split: prod.splits del: register_\<alpha>.simps registers_contain_unique_addresses.simps, intro allI conjI impI)
 method clean_goal = (match conclusion in "case _ of (s, r) \<Rightarrow> (case r of return_value _ \<Rightarrow> _ | branch_label _ \<Rightarrow> _)" \<Rightarrow> clean_goal')
 
-method clean_case_prod_goal = simp only: split split: prod.splits; intro allI impI conjI; (simp; fail)?; elim conjE
-(*
-method unfold_execute_blocks_from_until = rule asm_rl[of "hoare _ (execute_blocks_from_until _ _ _) _"], rule hoare_blocks_from_until_intro, sub_map_of_some
-method unfold_verify_blocks_from = rule asm_rl[of "verify_blocks_from _ _ _"], simp
-
-method unfold_verify_function = rule asm_rl[of "verify_function _"], simp del: verify_blocks_from.simps, (intro conjI)?
-
-
-
-method vcg_step = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step | attempt_endgoal
-method vcg_step_dbg = elim exE conjE | unfold_verify_function | unfold_verify_blocks_from | unfold_execute_blocks_from_until | clean_goal | block_vcg_step_dbg | attempt_endgoal
-method vcg = vcg_step+
-method vcg_dbg = vcg_step_dbg+
-*)
-
-method attempt_endgoal_strat = (force | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
-method match_all_but_endgoal = rule asm_rl[of "wp _ _"]
-
-method attempt_endgoal = (match_all_but_endgoal | attempt_endgoal_strat); fail
 
 end

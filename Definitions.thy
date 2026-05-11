@@ -1,5 +1,5 @@
 theory Definitions
-  imports "Word_Lib/Word_64" "Word_Lib/Word_32" "HOL-Library.Mapping" "Result"
+  imports "Word_Lib/Word_Names" "HOL-Library.Mapping" "Result"
 begin
 
 section "LLVM AST"
