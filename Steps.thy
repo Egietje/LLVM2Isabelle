@@ -186,7 +186,8 @@ definition "floyd_cond s p l \<equiv> wp_annotated_step (bbranch s p l) (\<lambd
 definition floyd_vc :: "bool" where
   "floyd_vc \<equiv>
     map_of annotations (None, first_label) \<noteq> None
-    \<and> (\<forall>p l. map_of annotations (p,l) \<noteq> None \<longrightarrow> (\<forall>s. annotation_holds (bbranch s p l) \<longrightarrow> floyd_cond s p l))"
+    \<and> (\<forall>p l. map_of annotations (p,l) \<noteq> None \<longrightarrow>
+        (\<forall>s. annotation_holds (bbranch s p l) \<longrightarrow> floyd_cond s p l))"
 
 lemma predicate_for_all_impl_for_all_map_of:
   assumes "predicate_for_all (\<lambda>p l. (\<forall>s. annotation_holds (bbranch s p l) \<longrightarrow> floyd_cond s p l)) a"

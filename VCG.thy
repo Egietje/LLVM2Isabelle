@@ -4,8 +4,6 @@ begin
 
 section "Useful Shorthands"
 
-find_theorems "_ \<and> True"
-
 abbreviation register_contains_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
   "register_contains_value n v s \<equiv> register_\<alpha> s (reg n) = Some v"
 

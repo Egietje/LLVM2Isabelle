@@ -308,8 +308,7 @@ definition mult_post :: "postcondition" where
 
 
 definition mult_function :: llvm_function where
-  "mult_function = (func
-    (func_def ''mult'' i32) 
+  "mult_function = (func i32
     [
       (lid ''entry'',    mult_entry),
       (lid ''for.cond'', mult_cond),

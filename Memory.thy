@@ -4,10 +4,13 @@ begin
 
 section "Simps"
 
-lemma register_\<alpha>_eq[simp]: "register_\<alpha> (r,s,h) = register_\<alpha> (r,s',h')"
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (l,g,s,h) = register_\<alpha> (l,g,s',h')"
   apply (rule ext)
   subgoal for x
-    by (cases r; cases x; simp; metis)
+    apply (cases x; simp)
+    subgoal for id
+      by (cases id; simp)
+    done
   done
 
 
@@ -22,8 +25,8 @@ lemma single_memory_\<alpha>_set[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_set_heap[simp]:
-  assumes "memory_\<alpha> (vs,s,h) (haddr a) \<noteq> None"
-  shows "memory_\<alpha> (vs,s,h[a := mem_val v]) = ((memory_\<alpha> (vs,s,h))((haddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (l,g,s,h) (haddr a) \<noteq> None"
+  shows "memory_\<alpha> (l,g,s,h[a := mem_val v]) = ((memory_\<alpha> (l,g,s,h))((haddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -31,8 +34,8 @@ lemma memory_\<alpha>_set_heap[simp]:
   done
 
 lemma memory_\<alpha>_set_stack[simp]:
-  assumes "memory_\<alpha> (vs,s,h) (saddr a) \<noteq> None"
-  shows "memory_\<alpha> (vs,s[a := mem_val v],h) = ((memory_\<alpha> (vs,s,h))((saddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> None"
+  shows "memory_\<alpha> (l,g,s[a := mem_val v],h) = ((memory_\<alpha> (l,g,s,h))((saddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -53,22 +56,22 @@ lemma single_memory_\<alpha>_allocated[single_memory_simps]:
 
 lemma memory_\<alpha>_allocate_heap_eq:
   assumes "a \<noteq> (haddr (length h))"
-  shows "memory_\<alpha> (vs,s,h@[mem_unset]) a = memory_\<alpha> (vs,s,h) a"
+  shows "memory_\<alpha> (l,g,s,h@[mem_unset]) a = memory_\<alpha> (l,g,s,h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
 lemma memory_\<alpha>_allocate_stack_eq:
   assumes "a \<noteq> (saddr (length s))"
-  shows "memory_\<alpha> (vs,s@[mem_unset],h) a = memory_\<alpha> (vs,s,h) a"
+  shows "memory_\<alpha> (l,g,s@[mem_unset],h) a = memory_\<alpha> (l,g,s,h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
 lemma memory_\<alpha>_allocate_heap[simp]:
-  "memory_\<alpha> (r, s, h @ [mem_unset]) = (memory_\<alpha> (r, s, h))(haddr (length h) := Some None)"
+  "memory_\<alpha> (l, g, s, h @ [mem_unset]) = (memory_\<alpha> (l, g, s, h))(haddr (length h) := Some None)"
   by (auto simp: memory_\<alpha>_allocate_heap_eq single_memory_simps)
 
 lemma memory_\<alpha>_allocate_stack[simp]:
-  "memory_\<alpha> (r, s @ [mem_unset], h) = (memory_\<alpha> (r, s, h))(saddr (length s) := Some None)"
+  "memory_\<alpha> (l, g, s @ [mem_unset], h) = (memory_\<alpha> (l, g, s, h))(saddr (length s) := Some None)"
   by (auto simp: memory_\<alpha>_allocate_stack_eq single_memory_simps)
 
 
@@ -78,14 +81,14 @@ lemma single_memory_\<alpha>_free[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_free_heap[simp]:
-  "memory_\<alpha> (vs,s,h[a := mem_freed]) = (memory_\<alpha> (vs,s,h))(haddr a := None)"
+  "memory_\<alpha> (l,g,s,h[a := mem_freed]) = (memory_\<alpha> (l,g,s,h))(haddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)
   done
 
 lemma memory_\<alpha>_free_stack[simp]:
-  "memory_\<alpha> (vs,s[a := mem_freed],h) = (memory_\<alpha> (vs,s,h))(saddr a := None)"
+  "memory_\<alpha> (l,g,s[a := mem_freed],h) = (memory_\<alpha> (l,g,s,h))(saddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)
@@ -214,9 +217,9 @@ lemma wp_free_memory_intro[THEN consequence, wp_intro]:
   using assms
   apply (cases a; cases s; simp)
   apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
-  subgoal for _ _ _ _ _ a' by (cases a'; simp)
+  subgoal for _ _ _ _ _ _ a' by (cases a'; simp)
   apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
-  subgoal for _ _ _ _ _ a' by (cases a'; simp)
+  subgoal for _ _ _ _ _ _ a' by (cases a'; simp)
   done
 
 
