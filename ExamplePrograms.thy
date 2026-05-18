@@ -309,6 +309,7 @@ definition mult_post :: "postcondition" where
 
 definition mult_function :: llvm_function where
   "mult_function = (func i32
+    [(lid ''a'', i32), (lid ''b'', i32)]
     [
       (lid ''entry'',    mult_entry),
       (lid ''for.cond'', mult_cond),
@@ -318,6 +319,7 @@ definition mult_function :: llvm_function where
     ]
   )"
 
+value "executor (program [(gid ''mult'', mult_function)]) (exec_func (gid ''mult'') [vi32 2, vi32 5] empty_state)"
 
 lemma mult_floyd:
   "floyd_vc

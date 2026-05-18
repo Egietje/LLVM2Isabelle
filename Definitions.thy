@@ -7,12 +7,12 @@ section "LLVM AST"
 
 subsection "Types and values"
 
-datatype llvm_type = i1 | i32 | i64 | addr_type
+datatype llvm_type = i1 | i32 | i64 | ptr
 
 type_synonym memory_model_address = nat
 datatype llvm_address = saddr memory_model_address | haddr memory_model_address
 
-datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
+datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | vptr llvm_address | poison
 
 datatype llvm_identifier = lid string | gid string
 
@@ -40,7 +40,7 @@ datatype llvm_instruction = alloca llvm_identifier llvm_type "llvm_align option"
                           | load llvm_identifier llvm_type llvm_pointer "llvm_align option"
                           | add llvm_identifier llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
                           | icmp llvm_identifier llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | call llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
+                          | call "llvm_identifier option" llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
 
 datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
                                      | br_i1 llvm_value_ref llvm_identifier llvm_identifier
@@ -53,13 +53,13 @@ type_synonym llvm_instruction_block = "(llvm_phi_node list * llvm_instruction li
 
 type_synonym llvm_labeled_blocks = "(llvm_identifier * llvm_instruction_block) list"
 
-datatype llvm_block_return = return_value llvm_value
+datatype llvm_block_return = return_value "llvm_value option"
                            | branch_label llvm_identifier
 
-datatype llvm_function = func llvm_type (blocks: llvm_labeled_blocks)
+datatype llvm_function = func llvm_type (params: "(llvm_identifier * llvm_type) list") (blocks: llvm_labeled_blocks)
 hide_const (open) llvm_function.blocks
 
-datatype llvm_program = program "(llvm_identifier * llvm_function) list"
+datatype llvm_program = program (funcs: "(llvm_identifier * llvm_function) list")
 
 
 

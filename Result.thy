@@ -11,6 +11,8 @@ datatype error = unknown_register_name
   | unallocated_address | uninitialized_address
   | not_an_address | incompatible_types | unknown_label
   | phi_no_previous_block | phi_label_not_found | phi_label_not_distinct
+  | unsupported_instruction | no_return_value | internal_error | empty_function
+  | inconsistent_parameters
 
 datatype 'a result = ok 'a | err error
 

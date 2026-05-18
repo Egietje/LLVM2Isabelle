@@ -8,10 +8,10 @@ abbreviation register_contains_value :: "llvm_identifier \<Rightarrow> llvm_valu
   "register_contains_value n v s \<equiv> register_\<alpha> s (reg n) = Some v"
 
 abbreviation register_contains_allocated_address :: "llvm_identifier \<Rightarrow> state \<Rightarrow> bool" where
-  "register_contains_allocated_address n s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
+  "register_contains_allocated_address n s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (vptr a) \<and> memory_\<alpha> s a \<noteq> None"
 
 abbreviation register_contains_address_with_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
-  "register_contains_address_with_value n v s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
+  "register_contains_address_with_value n v s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (vptr a) \<and> memory_\<alpha> s a = Some (Some v)"
 
 fun unique_address :: "llvm_address \<Rightarrow> llvm_address list \<Rightarrow> bool" where
   "unique_address ad (a#as) = ((ad \<noteq> a) \<and> unique_address ad as)"
@@ -22,7 +22,7 @@ fun unique_addresses :: "llvm_address list \<Rightarrow> bool" where
 | "unique_addresses [] = True"
 
 fun unique_addresses_rec :: "llvm_identifier list \<Rightarrow> state \<Rightarrow> llvm_address list \<Rightarrow> bool" where
-  "unique_addresses_rec (n#ns) s as = (\<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> unique_addresses_rec ns s (a#as))"
+  "unique_addresses_rec (n#ns) s as = (\<exists>a. register_\<alpha> s (reg n) = Some (vptr a) \<and> unique_addresses_rec ns s (a#as))"
 | "unique_addresses_rec []     _ as = unique_addresses as"
 
 fun registers_contain_unique_addresses :: "llvm_identifier list \<Rightarrow> state \<Rightarrow> bool" where
@@ -62,7 +62,7 @@ method unfold_unique_addresses = simp only: registers_contain_unique_addresses.s
 
 subsection "Subgoal Solving Methods"
 
-method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (addr _)"], (fastforce | simp)?; fail
+method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (vptr _)"], (fastforce | simp)?; fail
 method sub_memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"], (fastforce | simp)?; fail
 method sub_register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"], (fastforce | simp)?; fail
 method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"], (fastforce | simp split: if_splits)?; fail
