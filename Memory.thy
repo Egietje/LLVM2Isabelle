@@ -4,7 +4,7 @@ begin
 
 section "Simps"
 
-lemma register_\<alpha>_eq[simp]: "register_\<alpha> (l,g,s,h) = register_\<alpha> (l,g,s',h')"
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (state l g s h) = register_\<alpha> (state l g s' h')"
   apply (rule ext)
   subgoal for x
     apply (cases x; simp)
@@ -25,8 +25,8 @@ lemma single_memory_\<alpha>_set[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_set_heap[simp]:
-  assumes "memory_\<alpha> (l,g,s,h) (haddr a) \<noteq> None"
-  shows "memory_\<alpha> (l,g,s,h[a := mem_val v]) = ((memory_\<alpha> (l,g,s,h))((haddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (state l g s h) (haddr a) \<noteq> None"
+  shows "memory_\<alpha> (state l g s (h[a := mem_val v])) = ((memory_\<alpha> (state l g s h))((haddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -34,8 +34,8 @@ lemma memory_\<alpha>_set_heap[simp]:
   done
 
 lemma memory_\<alpha>_set_stack[simp]:
-  assumes "memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> None"
-  shows "memory_\<alpha> (l,g,s[a := mem_val v],h) = ((memory_\<alpha> (l,g,s,h))((saddr a) := Some (Some v)))"
+  assumes "memory_\<alpha> (state l g s h) (saddr a) \<noteq> None"
+  shows "memory_\<alpha> (state l g (s[a := mem_val v]) h) = ((memory_\<alpha> (state l g s h))((saddr a) := Some (Some v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
@@ -56,22 +56,22 @@ lemma single_memory_\<alpha>_allocated[single_memory_simps]:
 
 lemma memory_\<alpha>_allocate_heap_eq:
   assumes "a \<noteq> (haddr (length h))"
-  shows "memory_\<alpha> (l,g,s,h@[mem_unset]) a = memory_\<alpha> (l,g,s,h) a"
+  shows "memory_\<alpha> (state l g s (h@[mem_unset])) a = memory_\<alpha> (state l g s h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
 lemma memory_\<alpha>_allocate_stack_eq:
   assumes "a \<noteq> (saddr (length s))"
-  shows "memory_\<alpha> (l,g,s@[mem_unset],h) a = memory_\<alpha> (l,g,s,h) a"
+  shows "memory_\<alpha> (state l g (s@[mem_unset]) h) a = memory_\<alpha> (state l g s h) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
 lemma memory_\<alpha>_allocate_heap[simp]:
-  "memory_\<alpha> (l, g, s, h @ [mem_unset]) = (memory_\<alpha> (l, g, s, h))(haddr (length h) := Some None)"
+  "memory_\<alpha> (state l g s (h@[mem_unset])) = (memory_\<alpha> (state l g s h))(haddr (length h) := Some None)"
   by (auto simp: memory_\<alpha>_allocate_heap_eq single_memory_simps)
 
 lemma memory_\<alpha>_allocate_stack[simp]:
-  "memory_\<alpha> (l, g, s @ [mem_unset], h) = (memory_\<alpha> (l, g, s, h))(saddr (length s) := Some None)"
+  "memory_\<alpha> (state l g (s@[mem_unset]) h) = (memory_\<alpha> (state l g s h))(saddr (length s) := Some None)"
   by (auto simp: memory_\<alpha>_allocate_stack_eq single_memory_simps)
 
 
@@ -81,14 +81,14 @@ lemma single_memory_\<alpha>_free[single_memory_simps]:
   by (auto split: if_splits)
 
 lemma memory_\<alpha>_free_heap[simp]:
-  "memory_\<alpha> (l,g,s,h[a := mem_freed]) = (memory_\<alpha> (l,g,s,h))(haddr a := None)"
+  "memory_\<alpha> (state l g s (h[a := mem_freed])) = (memory_\<alpha> (state l g s h))(haddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)
   done
 
 lemma memory_\<alpha>_free_stack[simp]:
-  "memory_\<alpha> (l,g,s[a := mem_freed],h) = (memory_\<alpha> (l,g,s,h))(saddr a := None)"
+  "memory_\<alpha> (state l g (s[a := mem_freed]) h) = (memory_\<alpha> (state l g s h))(saddr a := None)"
   apply (rule ext)
   subgoal for a'
     by (cases a'; simp add: single_memory_simps)
@@ -135,7 +135,7 @@ section "memory_\<alpha> operations"
 
 lemma set_memory_\<alpha>:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "\<exists>s'. set_memory a v s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v))"
+  shows "\<exists>s'. set_memory a v s = Some s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v))"
   using assms
   by (cases s; cases a; auto simp: single_memory_\<alpha>_def set_single_memory_def split: if_splits)
 
@@ -153,7 +153,7 @@ lemma allocate_heap_\<alpha>:
 
 lemma free_memory_\<alpha>:
   assumes "memory_\<alpha> s a \<noteq> None"
-  shows "\<exists>s'. free_memory a s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := None)"
+  shows "\<exists>s'. free_memory a s = Some s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := None)"
   using assms
   by (cases s; cases a; auto simp: free_single_memory_def single_memory_\<alpha>_def split: if_splits)
 
@@ -162,10 +162,10 @@ lemma free_memory_\<alpha>:
 section "Intro rules"
 
 lemma wp_case_memory_value_intro[wp_intro]:
-  assumes "x = mem_unset \<Longrightarrow> wp_gen f Q E"
-  assumes "\<And>v. x = mem_val v \<Longrightarrow> wp_gen (g v) Q E"
-  assumes "x = mem_freed \<Longrightarrow> wp_gen h Q E"
-  shows "wp_gen (case x of mem_unset \<Rightarrow> f | mem_val v \<Rightarrow> g v | mem_freed \<Rightarrow> h) Q E"
+  assumes "x = mem_unset \<Longrightarrow> wp f Q"
+  assumes "\<And>v. x = mem_val v \<Longrightarrow> wp (g v) Q"
+  assumes "x = mem_freed \<Longrightarrow> wp h Q"
+  shows "wp (case x of mem_unset \<Rightarrow> f | mem_val v \<Rightarrow> g v | mem_freed \<Rightarrow> h) Q"
   using assms
   by (cases x; simp)
 
@@ -176,7 +176,8 @@ lemma wp_get_single_memory_intro[THEN consequence, single_memory_intro]:
   shows "wp (get_single_memory s a) (\<lambda>x. single_memory_\<alpha> s a = Some (Some x))"
   using assms
   unfolding get_single_memory_def valid_single_memory_address_def single_memory_\<alpha>_def
-  by (intro wp_intro; simp)
+  apply auto
+  by (rule wp_intro; simp)
 
 lemma wp_get_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
@@ -191,15 +192,15 @@ lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
   shows "wp (set_single_memory a v m) (\<lambda>m'. single_memory_\<alpha> m' = (single_memory_\<alpha> m)(a := Some (Some v)))"
   using assms
   unfolding set_single_memory_def
-  by (intro wp_intro wp_return_intro; simp add: single_memory_simps)
-                                                                               
+  by (intro wp_intro; simp add: single_memory_simps)
+
 lemma wp_set_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
   shows "wp (set_memory a v s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms 
   apply (cases a; cases s; simp)
   unfolding set_single_memory_def
-  by (intro wp_intro wp_return_intro; simp add: single_memory_simps; rule ext; simp)+
+  by (intro wp_intro; simp add: single_memory_simps; rule ext; simp)+
 
 
 lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
@@ -207,38 +208,36 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
   shows "wp (free_single_memory a s) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := None))"
   using assms
   unfolding free_single_memory_def
-  apply (intro wp_intro wp_return_intro)
-  apply (simp add: single_memory_simps)
-  by (simp add: single_memory_simps)
+  by (intro wp_intro; simp add: single_memory_simps)
 
 lemma wp_free_memory_intro[THEN consequence, wp_intro]:
   assumes "memory_\<alpha> s a \<noteq> None"
   shows "wp (free_memory a s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := None) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms
   apply (cases a; cases s; simp)
-  apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
+  apply (intro wp_intro single_memory_intro; simp; rule ext)
   subgoal for _ _ _ _ _ _ a' by (cases a'; simp)
-  apply (intro wp_intro single_memory_intro wp_return_intro; simp; rule ext)
+  apply (intro wp_intro single_memory_intro; simp; rule ext)
   subgoal for _ _ _ _ _ _ a' by (cases a'; simp)
   done
 
 
 lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
-  "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None) \<and> single_memory_\<alpha> s a = None)"
+  "wp (Some (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some None) \<and> single_memory_\<alpha> s a = None)"
   unfolding allocate_single_memory_def
-  apply (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
+  apply (intro wp_intro; auto simp: single_memory_simps)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (Some (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
-  apply (cases s; intro wp_intro wp_return_intro; auto)
+  apply (cases s; intro wp_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (Some (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
-  apply (cases s; intro wp_intro wp_return_intro; auto)
+  apply (cases s; intro wp_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
 
 end
