@@ -103,8 +103,8 @@ method instr_vcg_step_dbg = unfold_block_instr | unfold_instr | strat_alloca_dbg
 
 subsection "Phi Node Methods"
 
-method strat_phi = rule asm_rl[of "wp (execute_phi _ _ _ _) _"], strat_instr \<open>sub_distinct_first, sub_some_refl, sub_map_of_some, sub_register_value\<close>
-method strat_phi_dbg = rule asm_rl[of "wp (execute_phi _ _ _ _) _"], strat_instr_dbg
+method strat_phi = rule asm_rl[of "wp (execute_phi _ _ _) _"], strat_instr \<open>sub_distinct_first, sub_some_refl, sub_map_of_some, sub_register_value\<close>
+method strat_phi_dbg = rule asm_rl[of "wp (execute_phi _ _ _) _"], strat_instr_dbg
 
 method unfold_block_phi = rule asm_rl[of "wp (execute_block _ (_#_, _, _) _) _"], rule wp_intro
 
@@ -114,6 +114,7 @@ method phi_vcg_step_dbg = unfold_block_phi | strat_phi_dbg
 
 subsection "Terminal Instruction Methods"
 
+(*
 method strat_branch_i1 = rule asm_rl[of "wp (execute_block _ ([], [], br_i1 _ _ _) _ ) _"], (rule wp_intro, sub_register_value); (simp only: False_eq_False)?
 method strat_branch_label = rule asm_rl[of "wp (execute_block _ ([], [], br_label _) _ ) _"], rule wp_intro; (simp only: False_eq_False)?
 method strat_return = rule asm_rl[of "wp (execute_block _ ([], [], ret _ _) _ ) _"], (rule wp_intro, sub_register_value); (simp only: False_eq_False)?
@@ -121,12 +122,14 @@ method strat_return = rule asm_rl[of "wp (execute_block _ ([], [], ret _ _) _ ) 
 method term_vcg_step_dbg = rule asm_rl[of "wp (execute_block _ ([], [], _) _) _"], rule wp_intro, (solve_subgoal+)?; (simp only: False_eq_False)?
 
 method term_vcg_step = strat_branch_i1 | strat_branch_label | strat_return
-
+*)
 
 subsection "Block VCG Methods"
 
-method block_vcg_step = phi_vcg_step | instr_vcg_step | term_vcg_step
-method block_vcg_step_dbg = phi_vcg_step_dbg | instr_vcg_step_dbg | term_vcg_step_dbg
+method unfold_wp_instrs = rule asm_rl[of "wp_instrs _ _"], rule wp_instrs_intro
+
+method block_vcg_step = unfold_wp_instrs | phi_vcg_step | instr_vcg_step
+method block_vcg_step_dbg = unfold_wp_instrs | phi_vcg_step_dbg | instr_vcg_step_dbg
 
 method block_vcg uses pres blocks = (subst (asm) pres)?, (subst blocks)?, unfold_unique_addresses?, block_vcg_step+, (simp (no_asm))?, \<comment> \<open>branching\<close>(intro conjI impI)?
 method block_vcg_dbg uses pres blocks = (subst (asm) pres)?, (subst blocks)?, unfold_unique_addresses?, block_vcg_step_dbg+, (simp (no_asm))?, (intro conjI impI)?

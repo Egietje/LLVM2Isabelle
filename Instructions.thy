@@ -307,39 +307,57 @@ datatype instruction_state = execi "llvm_identifier option" llvm_instruction_blo
   | flowi state llvm_block_return
   | is_erri: erri
                                                     
-inductive step_i :: "instruction_state \<Rightarrow> instruction_state \<Rightarrow> bool" where
+inductive step_i :: "instruction_state \<Rightarrow> instruction_state \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>i" 50) where
   "step_i (execi pre ([],[],br_label l) s) (flowi s (branch_label l))"
 
 | "get_register s b = ok (vi1 b') \<Longrightarrow>
-    step_i (execi pre ([],[],br_i1 b l1 l2) s) (flowi s (branch_label (if b' then l1 else l2)))"
+    (execi pre ([],[],br_i1 b l1 l2) s) \<rightarrow>\<^sub>i (flowi s (branch_label (if b' then l1 else l2)))"
 | "\<nexists>b'. get_register s b = ok (vi1 b') \<Longrightarrow>
-    step_i (execi pre ([],[],br_i1 b l1 l2) s) erri"
+    (execi pre ([],[],br_i1 b l1 l2) s) \<rightarrow>\<^sub>i erri"
 
-| "step_i (execi pre ([],[],ret None) s) (flowi s (return_value None))"
+| "(execi pre ([],[],ret None) s) \<rightarrow>\<^sub>i (flowi s (return_value None))"
 
 | "get_register s v = ok v' \<Longrightarrow>
-    step_i (execi pre ([],[],ret (Some (t, v))) s) (flowi s (return_value (Some v')))"
+    (execi pre ([],[],ret (Some (t, v))) s) \<rightarrow>\<^sub>i (flowi s (return_value (Some v')))"
 | "get_register s v = err _ \<Longrightarrow>
-    step_i (execi pre ([],[],ret (Some (t, v))) s) erri"
+    (execi pre ([],[],ret (Some (t, v))) s) \<rightarrow>\<^sub>i erri"
 
 | "execute_instruction i s = ok s' \<Longrightarrow>
-    step_i (execi pre ([],i#is,t) s) (execi pre ([],is,t) s')"
+    (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) s')"
 | "execute_instruction i s = err _ \<Longrightarrow>
-    step_i (execi pre ([],i#is,t) s) erri"
+    (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i erri"
 
 | "execute_phi pre p s = ok s' \<Longrightarrow>
-    step_i (execi pre (p#ps,is,t) s) (execi pre (ps,is,t) s')"
+    (execi pre (p#ps,is,t) s) \<rightarrow>\<^sub>i (execi pre (ps,is,t) s')"
 | "execute_phi pre p s = err _ \<Longrightarrow>
-    step_i (execi pre (p#ps,is,t) s) erri"
+    (execi pre (p#ps,is,t) s) \<rightarrow>\<^sub>i erri"
+
+abbreviation steps_i (infix "\<rightarrow>\<^sub>i*" 50) where
+  "s \<rightarrow>\<^sub>i* s' \<equiv> step_i\<^sup>*\<^sup>* s s'"
+
+
+fun n_steps_i :: "instruction_state \<Rightarrow> nat \<Rightarrow> instruction_state \<Rightarrow> bool" where
+  "n_steps_i s 0 s'  = (s = s')"
+| "n_steps_i s (Suc n) s' = (\<exists>x. s \<rightarrow>\<^sub>i x \<and> n_steps_i x n s')"
+
+notation n_steps_i ("(_ \<rightarrow>\<^sub>i^_ _)" [51, 0, 51] 50)
+
+
+lemma steps_i_exists_n_steps_i[simp]:
+  assumes "fs \<rightarrow>\<^sub>i* fs'"
+  shows "\<exists>n. fs \<rightarrow>\<^sub>i^n fs'"
+  using assms n_steps_i.simps
+  by (induction rule: converse_rtranclp_induct; blast)
+
 
 definition terminal_state_i where
-  "terminal_state_i s \<equiv> \<nexists>s'. step_i s s'"
-
+  "terminal_state_i s \<equiv> \<nexists>s'. s \<rightarrow>\<^sub>i s'"
+notation terminal_state_i ("_ \<nexists>\<rightarrow>\<^sub>i" 50)
 
 lemma term_state_i_simps[simp]:
-  "\<And>pre b s. \<not>terminal_state_i (execi pre b s)"
-  "\<And>s br. terminal_state_i (flowi s br)"
-  "terminal_state_i erri"
+  "\<And>pre b s. \<not> ((execi pre b s) \<nexists>\<rightarrow>\<^sub>i)"
+  "\<And>s br. (flowi s br) \<nexists>\<rightarrow>\<^sub>i"
+  "erri \<nexists>\<rightarrow>\<^sub>i"
   apply clarsimp
   subgoal for pre phis instrs ter l g s h
     unfolding terminal_state_i_def
@@ -354,7 +372,7 @@ lemma term_state_i_simps[simp]:
 
 lemma steps_model_exec:
   assumes "execute_block pre b s = ok (s', br)"
-  shows "step_i\<^sup>*\<^sup>* (execi pre b s) (flowi s' br)"
+  shows "(execi pre b s) \<rightarrow>\<^sub>i* (flowi s' br)"
 proof (cases b)
   case (fields phis instrs ter)
 
@@ -385,7 +403,7 @@ proof (cases b)
             using Cons
             by auto
 
-          then have "step_i\<^sup>*\<^sup>* (execi pre ([],ins,ter) is') (flowi s' br)"
+          then have "(execi pre ([],ins,ter) is')  \<rightarrow>\<^sub>i* (flowi s' br)"
             using Cons
             by auto
 
@@ -400,7 +418,7 @@ proof (cases b)
           using Cons
           by auto
 
-        then have "step_i\<^sup>*\<^sup>* (execi pre (ps,instrs,ter) ps') (flowi s' br)"
+        then have "(execi pre (ps,instrs,ter) ps')  \<rightarrow>\<^sub>i* (flowi s' br)"
           using Cons
           by auto
 
@@ -413,16 +431,16 @@ proof (cases b)
 
 
 lemma single_step_eq_exec_step:
-  assumes "step_i (execi pre b s) (execi pre b' s')"
+  assumes "(execi pre b s)  \<rightarrow>\<^sub>i (execi pre b' s')"
   assumes "execute_block pre b' s' = ok (s'', br)"
   shows "execute_block pre b s = ok (s'', br)"
   using assms step_i.cases
   by fastforce
 
 
-lemma step_i_deterministic:
-  assumes "step_i s s1"
-  assumes "step_i s s2"
+lemma step_i_deterministic[simp]:
+  assumes "s \<rightarrow>\<^sub>i s1"
+  assumes "s \<rightarrow>\<^sub>i s2"
   shows "s1 = s2"
 proof -
   show ?thesis
@@ -478,7 +496,7 @@ proof -
     next
       case erri
       have "\<forall>e. get_register stat v \<noteq> err e" using prems by simp
-      then have "\<not>step_i s erri" using prems step_i.cases by blast
+      then have "\<not>s \<rightarrow>\<^sub>i erri" using prems step_i.cases by blast
       then show ?thesis using prems erri by blast
     qed
   subgoal premises prems for stat v v' pre t
@@ -510,13 +528,8 @@ proof -
     done
 qed
 
-lemma step_i_reaches_terminal_state:
-  "\<exists>s'. step_i\<^sup>*\<^sup>* s s' \<and> terminal_state_i s'"
-  apply (induction s) apply auto
-  
 
-
-definition "wp_instrs s Q \<equiv> \<forall>s'. step_i\<^sup>*\<^sup>* s s' \<and> terminal_state_i s' \<longrightarrow> \<not>is_erri s' \<and> Q s'"
+definition "wp_instrs s Q \<equiv> \<forall>s'. s \<rightarrow>\<^sub>i* s' \<and> terminal_state_i s' \<longrightarrow> \<not>is_erri s' \<and> Q s'"
 
 lemma wp_impl_ok:
   assumes "wp x Q"
@@ -526,7 +539,9 @@ lemma wp_impl_ok:
   by (cases x; simp)
 
 
-lemma instrs_phi_intro:
+named_theorems wp_instrs_intro
+
+lemma instrs_phi_intro[wp_instrs_intro]:
   assumes "wp (execute_phi pre p s) (\<lambda>s'. wp_instrs (execi pre (ps, is, t) s') Q)"
   shows "wp_instrs (execi pre (p#ps, is, t) s) Q"
 proof -
@@ -540,7 +555,7 @@ proof -
     by (smt (verit))
 qed
 
-lemma instrs_instr_intro:
+lemma instrs_instr_intro[wp_instrs_intro]:
   assumes "wp (execute_instruction i s) (\<lambda>s'. wp_instrs (execi pre ([], is, t) s') Q)"
   shows "wp_instrs (execi pre ([], i#is, t) s) Q"
 proof -
@@ -554,7 +569,7 @@ proof -
     by (smt (verit))
 qed
 
-lemma block_ret_wp_intro:
+lemma block_ret_Some_wp_intro[wp_instrs_intro]:
   assumes "register_\<alpha> s value = Some v"
   assumes "Q (flowi s (return_value (Some v)))"
   shows "wp_instrs (execi pre ([], [], ret (Some (type, value))) s) Q"
@@ -563,8 +578,8 @@ lemma block_ret_wp_intro:
   apply (intro impI allI) apply (elim conjE)
   subgoal premises prems for s'
     proof -
-      have "step_i (execi pre ([], [], ret (Some (type, value))) s) (flowi s (return_value (Some v)))"
-        using prems step_i.intros
+      have "(execi pre ([], [], ret (Some (type, value))) s) \<rightarrow>\<^sub>i (flowi s (return_value (Some v)))"
+        using prems step_i.intros register_\<alpha>_eq_get_register
         by auto
 
         then show ?thesis using step_i_deterministic
@@ -574,7 +589,7 @@ lemma block_ret_wp_intro:
     qed
   done
 
-lemma block_ret_None_wp_intro:
+lemma block_ret_None_wp_intro[wp_instrs_intro]:
   assumes "Q (flowi s (return_value None))"
   shows "wp_instrs (execi pre ([], [], ret None) s) Q"
   unfolding wp_instrs_def
@@ -594,7 +609,7 @@ lemma block_ret_None_wp_intro:
   done
 
 
-lemma block_br_label_wp_intro:
+lemma block_br_label_wp_intro[wp_instrs_intro]:
   assumes "Q (flowi s (branch_label l))"
   shows "wp_instrs (execi pre ([], [], br_label l) s) Q"
   unfolding wp_instrs_def
@@ -604,9 +619,10 @@ lemma block_br_label_wp_intro:
       llvm_terminator_instruction.distinct llvm_terminator_instruction.inject prod.inject
       result.distinct(1) result.inject(1) step_i.cases term_state_i_simps(1,2))
 
-lemma block_br_i1_wp_intro:
+lemma block_br_i1_wp_intro[wp_instrs_intro]:
   assumes "register_\<alpha> s value = Some (vi1 b)"
-  assumes "Q (flowi s (branch_label (if b then l1 else l2)))"
+  assumes "b \<Longrightarrow> Q (flowi s (branch_label l1))"
+  assumes "\<not>b \<Longrightarrow> Q (flowi s (branch_label l2))"
   shows "wp_instrs (execi pre ([], [], br_i1 value l1 l2) s) Q"
   unfolding wp_instrs_def
   using assms
@@ -614,7 +630,7 @@ lemma block_br_i1_wp_intro:
   by (smt (verit) converse_rtranclpE instruction_state.disc(8) instruction_state.inject(1) list.discI
       llvm_terminator_instruction.distinct(1,5) llvm_terminator_instruction.inject(2) llvm_value.inject(1)
       prod.inject result.inject(1) step_i.cases term_state_i_simps(1,2) register_\<alpha>_eq_get_register)
-  
+
 
 
 end

@@ -273,7 +273,7 @@ definition mult_end :: "llvm_instruction_block" where
     [
       load (lid ''5'') i32 (reg (lid ''result'')) (Some 4)
     ],
-    ret i32 (reg (lid ''5''))
+    ret (Some (i32, (reg (lid ''5''))))
   )"
 
 definition mult_end_pre :: "precondition" where
@@ -335,7 +335,7 @@ lemma mult_floyd:
     apply (unfold_wp_annotated_step)
     apply (block_vcg blocks: mult_entry_def pres: mult_pre_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg blocks: mult_cond_def)
+    apply (block_vcg blocks: mult_cond_def, simp; (simp; fail)?) apply (simp (no_asm))
     apply (unfold_wp_steps_until)
     apply (unfold mult_body_pre_def)
     by fastforce
@@ -347,14 +347,16 @@ lemma mult_floyd:
     apply (unfold_wp_steps_until)
     apply (block_vcg blocks: mult_inc_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg blocks: mult_cond_def)
+    apply (block_vcg blocks: mult_cond_def, simp; (simp; fail)?)
     
     subgoal (* cond \<rightarrow> body *)
+      apply (simp (no_asm))
       apply (unfold_wp_steps_until)
       apply (subst mult_body_pre_def)
       by (auto simp: distrib_left)
     
     subgoal (* cond \<longrightarrow> end *)
+      apply (simp (no_asm))
       apply (unfold_wp_steps_until)
       apply (subst mult_end_pre_def)
       by auto
@@ -365,6 +367,8 @@ lemma mult_floyd:
   subgoal (* end \<rightarrow> return *)
     apply (unfold_wp_annotated_step)
     apply (block_vcg blocks: mult_end_def pres: mult_end_pre_def)
+     apply simp
+    apply (simp (no_asm))
     apply (unfold_wp_steps_until)
     apply (subst mult_post_def)
     by fastforce

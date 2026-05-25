@@ -17,8 +17,8 @@ fun step :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<r
   "(bbranch s prev lab) \<rightarrow> s' = (case map_of (llvm_function.blocks f) lab of 
         None \<Rightarrow> s' = berr 
       | Some block \<Rightarrow> \<exists>ss.
-          step_i\<^sup>*\<^sup>* (execi prev block s) ss
-        \<and> terminal_state_i ss
+          (execi prev block s) \<rightarrow>\<^sub>i* ss
+        \<and> (ss \<nexists>\<rightarrow>\<^sub>i)
         \<and> (case ss of
             erri \<Rightarrow> s' = berr
           | flowi ss' (branch_label l) \<Rightarrow> s' = bbranch ss' (Some lab) l
@@ -35,8 +35,6 @@ fun n_steps :: "flow_state \<Rightarrow> nat \<Rightarrow> flow_state \<Rightarr
 | "n_steps s (Suc n) s' = (\<exists>x. s \<rightarrow> x \<and> n_steps x n s')"
 
 notation n_steps ("(_ \<rightarrow>^_ _)" [51, 0, 51] 50)
-
-find_consts name: tranc
 
 lemma steps_exists_n_steps:
   assumes "fs \<rightarrow>* fs'"
@@ -58,13 +56,90 @@ lemma terminal_state_simps[simp]:
     subgoal premises prems for phis instrs ter
       using prems(2)
     proof (induction phis arbitrary: b s)
-      case Nil
-      then show ?case sorry
+      case phinil: Nil
+      then show ?case
+      proof (induction instrs arbitrary: b s)
+        case insnil: Nil
+        then show ?case
+        proof(cases ter)
+          case (ret x1)
+          then show ?thesis
+          proof (cases x1)
+            case None
+            then show ?thesis by (metis (mono_tags, lifting) ret instruction_state.simps(10) llvm_block_return.simps(5) insnil r_into_rtranclp
+                step_i.intros(4) term_state_i_simps(2))
+          next
+            case (Some v)
+            then obtain s' where "execi prev ([],[],ter) s \<rightarrow>\<^sub>i s'"
+              using term_state_i_simps unfolding terminal_state_i_def by meson
+            then have "s' = erri \<or> (\<exists>s'' v'. s' = flowi s'' v')"
+              by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
+                  step_i.cases)
+            then have "\<exists>ss' ss. step_i\<^sup>*\<^sup>* s' ss \<and> terminal_state_i ss \<and>
+            (case ss of flowi stat (return_value v) \<Rightarrow> ss' = bret stat v
+              | flowi stat (branch_label l) \<Rightarrow> ss' = bbranch stat (Some lab) l | erri \<Rightarrow> ss' = berr)"
+                using prems phinil insnil ret Some
+                by (metis (mono_tags, lifting) instruction_state.simps(10,11) llvm_block_return.exhaust llvm_block_return.simps(5,6)
+                    rtranclp.simps term_state_i_simps(2,3))
+
+            then show ?thesis using prems phinil insnil ret Some
+              by (metis (no_types, lifting) \<open>execi prev ([], [], ter) s \<rightarrow>\<^sub>i s'\<close> converse_rtranclp_into_rtranclp)
+          qed
+        next
+          case (br_i1 x21 x22 x23)
+            then obtain s' where "execi prev ([],[],ter) s \<rightarrow>\<^sub>i s'"
+              using term_state_i_simps unfolding terminal_state_i_def by meson
+            then have "s' = erri \<or> (\<exists>s'' v'. s' = flowi s'' v')"
+              by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
+                  step_i.cases)
+            then have "\<exists>ss' ss. step_i\<^sup>*\<^sup>* s' ss \<and> terminal_state_i ss \<and>
+            (case ss of flowi stat (return_value v) \<Rightarrow> ss' = bret stat v
+              | flowi stat (branch_label l) \<Rightarrow> ss' = bbranch stat (Some lab) l | erri \<Rightarrow> ss' = berr)"
+                using prems phinil insnil br_i1
+                by (metis (mono_tags, lifting) instruction_state.simps(10,11) llvm_block_return.exhaust llvm_block_return.simps(5,6)
+                    rtranclp.simps term_state_i_simps(2,3))
+          then show ?thesis using prems phinil insnil
+              by (metis (no_types, lifting) \<open>execi prev ([], [], ter) s \<rightarrow>\<^sub>i s'\<close> converse_rtranclp_into_rtranclp)
+        next
+          case (br_label x3)
+            then obtain s' where "execi prev ([],[],ter) s \<rightarrow>\<^sub>i s'"
+              using term_state_i_simps unfolding terminal_state_i_def by meson
+            then have "s' = erri \<or> (\<exists>s'' v'. s' = flowi s'' v')"
+              by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
+                  step_i.cases)
+            then have "\<exists>ss' ss. step_i\<^sup>*\<^sup>* s' ss \<and> terminal_state_i ss \<and>
+            (case ss of flowi stat (return_value v) \<Rightarrow> ss' = bret stat v
+              | flowi stat (branch_label l) \<Rightarrow> ss' = bbranch stat (Some lab) l | erri \<Rightarrow> ss' = berr)"
+                using prems phinil insnil br_label
+                by (metis (mono_tags, lifting) instruction_state.simps(10,11) llvm_block_return.exhaust llvm_block_return.simps(5,6)
+                    rtranclp.simps term_state_i_simps(2,3))
+          then show ?thesis using prems phinil insnil
+              by (metis (no_types, lifting) \<open>execi prev ([], [], ter) s \<rightarrow>\<^sub>i s'\<close> converse_rtranclp_into_rtranclp)
+        qed
+      next
+        case (Cons i ins)
+
+        then obtain s' where "execi prev ([],i#ins,ter) s \<rightarrow>\<^sub>i s'"
+          using term_state_i_simps unfolding terminal_state_i_def by meson
+
+        then have "s'= erri \<or> (\<exists>st. s' = execi prev ([],ins,ter) st)"
+          by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
+            step_i.cases)
+      then have "\<exists>ss' ss. step_i\<^sup>*\<^sup>* s' ss \<and> terminal_state_i ss \<and>
+       (case ss of flowi stat (return_value v) \<Rightarrow> ss' = bret stat v
+        | flowi stat (branch_label l) \<Rightarrow> ss' = bbranch stat (Some lab) l | erri \<Rightarrow> ss' = berr)"
+        using prems Cons Nil by fastforce
+
+        then show ?case using prems Cons.IH
+          by (metis (no_types, lifting) Cons.prems \<open>execi prev ([], i # ins, ter) s \<rightarrow>\<^sub>i s'\<close> converse_rtranclp_into_rtranclp)
+      qed
+        
     next
       case (Cons p ps b s)
       
-      then obtain s' where "step_i (execi prev (p#ps,instrs,ter) s) s'"
+      then obtain s' where "(execi prev (p#ps,instrs,ter) s) \<rightarrow>\<^sub>i s'"
         using term_state_i_simps unfolding terminal_state_i_def by meson
+
       then have "s' = erri \<or> (\<exists>st. s' = execi prev (ps,instrs,ter) st)"
         by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
             step_i.cases)
@@ -95,10 +170,84 @@ lemma step_deterministic[simp]:
   "is_bbranch fs \<Longrightarrow> \<nexists>fs' fs''. step fs fs' \<and> step fs fs'' \<and> fs' \<noteq> fs''"
   apply auto
   using terminal_non_err terminal_state_def apply blast
-  apply (cases fs) apply auto
-  sorry
+  apply (cases fs)
+    apply simp_all
+  subgoal for fs' fs'' s prev l
+    apply (cases "map_of (llvm_function.blocks f) l")
+     apply simp_all
+      apply (elim exE conjE)
+    subgoal premises prems for b ss' ss''
+    proof -
+      obtain n where ndef: "execi prev b s \<rightarrow>\<^sub>i^n ss'"
+        using prems
+        by fastforce
 
+      moreover
 
+      obtain m where mdef: "execi prev b s \<rightarrow>\<^sub>i^m ss''"
+        using prems
+        by fastforce
+
+      ultimately
+
+      show ?thesis
+      proof (induction n arbitrary: prev b s m)
+        case 0
+        then show ?case using prems by auto
+      next
+        case nsuc: (Suc n')
+        then show ?case
+        proof (induction m arbitrary: prev b s)
+          case 0
+          then show ?case using prems by auto
+        next
+          case (Suc m')
+          
+          obtain s' where nextstate: "execi prev b s \<rightarrow>\<^sub>i s'"
+            using term_state_i_simps(1) terminal_state_i_def by blast
+
+          have nextmsteps: "s' \<rightarrow>\<^sub>i^m' ss''" using nextstate Suc
+            by (metis n_steps_i.simps(2) step_i_deterministic)
+
+          moreover
+
+          have nextnsteps: "s' \<rightarrow>\<^sub>i^n' ss'" using nextstate Suc
+            by (metis n_steps_i.simps(2) step_i_deterministic)
+
+          ultimately
+          
+          show ?case
+          proof(cases s')
+            case (execi x11 x12 x13)
+            then show ?thesis using nextmsteps nextnsteps nextstate Suc nsuc by blast  
+          next
+            case (flowi x21 x22)
+
+            have "m' = 0" using nextmsteps flowi
+              by (meson n_steps_i.elims(1) term_state_i_simps(2) terminal_state_i_def)
+
+            moreover
+
+            have "n' = 0" using nextnsteps flowi 
+              by (meson n_steps_i.elims(1) term_state_i_simps(2) terminal_state_i_def)
+
+            ultimately
+
+            have "ss' = ss''"using nextmsteps nextnsteps nextstate flowi prems Suc nsuc by simp
+            
+            then show ?thesis
+              using prems(6) prems(7) prems(8)
+              by (auto split: instruction_state.splits llvm_block_return.splits)
+          next
+            case erri
+            then show ?thesis
+              by (metis (mono_tags, lifting) instruction_state.simps(11) n_steps_i.elims(2) nextmsteps nextnsteps prems(6,8) term_state_i_simps(3) terminal_state_i_def)
+          qed
+        qed
+      qed
+    qed
+    done
+  done
 
 
 definition "wp_steps fs Q \<equiv> \<forall>fs'. fs \<rightarrow>* fs' \<and> terminal_state fs' \<longrightarrow> (\<not>is_berr fs') \<and> (Q (state fs') (ret_value fs'))"
@@ -177,14 +326,24 @@ lemma wp_step_intro:
       )
     )"
   shows "wp_step (bbranch s p l) Q"
-proof -
-  obtain s' where "step_i\<^sup>*\<^sup>* (execi p b s) s' \<and> terminal_state_i s'"
-  using assms
-  unfolding wp_instrs_def sledgehammer
-
-
-  show ?thesis sorry
-qed
+    unfolding wp_step_def
+    using assms(1)
+    apply clarsimp
+    subgoal premises prems for fs' s'
+    proof (cases s')
+      case (execi x11 x12 x13)
+      then show ?thesis using prems by simp
+    next
+      case (flowi x21 x22)
+      then show ?thesis
+        using prems apply (auto split: llvm_block_return.splits) using assms(2) unfolding wp_instrs_def by auto  
+        
+    next
+      case erri
+      then show ?thesis using prems assms
+        using instruction_state.disc(9) wp_instrs_def by blast
+    qed
+    done
 
 lemma wp_steps_until_intro:
   assumes "has_annotation fs \<Longrightarrow> Q fs"

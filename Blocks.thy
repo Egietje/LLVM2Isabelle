@@ -13,7 +13,7 @@ partial_function (tailrec) execute_blocks :: "llvm_identifier option \<Rightarro
         err e \<Rightarrow> err e
       | ok (s', br) \<Rightarrow>
         (case br of
-          return_value v \<Rightarrow> ok (s', Some v)
+          return_value v \<Rightarrow> ok (s', v)
         | branch_label l \<Rightarrow> execute_blocks (Some label) l blocks s'
         )
       )
