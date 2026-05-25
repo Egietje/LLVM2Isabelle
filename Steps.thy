@@ -13,19 +13,19 @@ begin
 
 definition "first_label \<equiv> (case llvm_function.blocks f of ((l,b)#fs) \<Rightarrow> l)"
 
-fun branch_step :: "flow_state \<Rightarrow> flow_state" where
-  "branch_step (berr) = berr"
-| "branch_step (bret s v) = bret s v"
-| "branch_step (bbranch s prev lab) = ((case map_of (llvm_function.blocks f) lab of 
-        None \<Rightarrow> berr 
-      | Some block \<Rightarrow> (case execute_block prev block s of 
-          err _ \<Rightarrow> berr 
-        | ok (s', return_value v) \<Rightarrow> bret s' (Some v)
-        | ok (s', branch_label l) \<Rightarrow> bbranch s' (Some lab) l))
+fun step :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<rightarrow>" 50) where
+  "(bbranch s prev lab) \<rightarrow> s' = (case map_of (llvm_function.blocks f) lab of 
+        None \<Rightarrow> s' = berr 
+      | Some block \<Rightarrow> \<exists>ss.
+          step_i\<^sup>*\<^sup>* (execi prev block s) ss
+        \<and> terminal_state_i ss
+        \<and> (case ss of
+            erri \<Rightarrow> s' = berr
+          | flowi ss' (branch_label l) \<Rightarrow> s' = bbranch ss' (Some lab) l
+          | flowi ss' (return_value v) \<Rightarrow> s' = bret ss' v
+          )
   )"
-
-definition step :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<rightarrow>" 50) where
-  "step s s' \<equiv> is_bbranch s \<and> s' = branch_step s"
+| "_ \<rightarrow> _ = False"
 
 abbreviation steps :: "flow_state \<Rightarrow> flow_state \<Rightarrow> bool" (infix "\<rightarrow>*" 50) where
   "s \<rightarrow>* s' \<equiv> step\<^sup>*\<^sup>* s s'"
@@ -51,8 +51,35 @@ lemma terminal_state_simps[simp]:
   "terminal_state berr"
   "terminal_state (bret s v)"
   "\<not>terminal_state (bbranch s prev lab)"
-  unfolding terminal_state_def step_def
-  by (auto)
+  unfolding terminal_state_def
+    apply auto apply (cases "map_of (llvm_function.blocks f) lab"; simp)
+  subgoal for b
+    apply (cases b)
+    subgoal premises prems for phis instrs ter
+      using prems(2)
+    proof (induction phis arbitrary: b s)
+      case Nil
+      then show ?case sorry
+    next
+      case (Cons p ps b s)
+      
+      then obtain s' where "step_i (execi prev (p#ps,instrs,ter) s) s'"
+        using term_state_i_simps unfolding terminal_state_i_def by meson
+      then have "s' = erri \<or> (\<exists>st. s' = execi prev (ps,instrs,ter) st)"
+        by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject
+            step_i.cases)
+        
+
+      then have "\<exists>ss' ss. step_i\<^sup>*\<^sup>* s' ss \<and> terminal_state_i ss \<and>
+       (case ss of flowi stat (return_value v) \<Rightarrow> ss' = bret stat v
+        | flowi stat (branch_label l) \<Rightarrow> ss' = bbranch stat (Some lab) l | erri \<Rightarrow> ss' = berr)"
+        using prems Cons by fastforce
+
+      then show ?case using prems Cons.IH
+        by (metis (no_types, lifting) Cons.prems \<open>step_i (execi prev (p # ps, instrs, ter) s) s'\<close>
+            converse_rtranclp_into_rtranclp)
+      qed
+          done done 
 
 lemma terminal_steps_refl[simp]:
   "terminal_state s \<Longrightarrow> s \<rightarrow>* s' \<longleftrightarrow> s'=s"
@@ -66,31 +93,12 @@ lemma terminal_non_err[simp]:
 lemma step_deterministic[simp]:
   "is_bbranch fs \<Longrightarrow> \<exists>fs'. step fs fs'"
   "is_bbranch fs \<Longrightarrow> \<nexists>fs' fs''. step fs fs' \<and> step fs fs'' \<and> fs' \<noteq> fs''"
-  unfolding step_def by simp+
+  apply auto
+  using terminal_non_err terminal_state_def apply blast
+  apply (cases fs) apply auto
+  sorry
 
-lemma step_models_execute_blocks_ok:
-  assumes "fs \<rightarrow>* fs'"
-  assumes "terminal_state fs'"
-  assumes "fs = bbranch s prev lab"
-  assumes "\<not> is_berr fs'"
-  assumes "fs \<rightarrow>* fs'"
-  assumes "terminal_state fs'"
-  shows   "execute_blocks prev lab (llvm_function.blocks f) s = ok (state fs', ret_value fs')"
-  using assms
-  apply (induction arbitrary: s prev lab rule: converse_rtranclp_induct)
-  apply simp
-  by (subst execute_blocks.simps; auto split: option.splits result.splits llvm_block_return.splits simp: step_def)
 
-lemma step_models_execute_blocks_err:
-  assumes "fs \<rightarrow>* fs'"
-  assumes "terminal_state fs'"
-  assumes "fs = bbranch s prev lab"
-  assumes "is_berr fs'"
-  shows   "\<exists>e. execute_blocks prev lab (llvm_function.blocks f) s = err e"
-  using assms
-  apply (induction arbitrary: s prev lab rule: converse_rtranclp_induct)
-  apply simp
-  by (subst execute_blocks.simps; auto split: option.splits result.splits llvm_block_return.splits simp: step_def)
 
 
 definition "wp_steps fs Q \<equiv> \<forall>fs'. fs \<rightarrow>* fs' \<and> terminal_state fs' \<longrightarrow> (\<not>is_berr fs') \<and> (Q (state fs') (ret_value fs'))"
@@ -157,11 +165,26 @@ definition wp_annotated_step where
 
 lemma wp_step_intro:
   assumes "map_of (llvm_function.blocks f) l = Some b"
-  assumes "wp (execute_block p b s) (\<lambda>(s', r). case r of branch_label l' \<Rightarrow> Q (bbranch s' (Some l) l') | return_value v \<Rightarrow> Q (bret s' (Some v)))"
+  assumes "wp_instrs
+    (execi p b s)
+    (\<lambda>s'.
+      (case s' of
+        (flowi s'' br) \<Rightarrow>
+          (case br of
+            branch_label l' \<Rightarrow> Q (bbranch s'' (Some l) l')
+          | return_value v  \<Rightarrow> Q (bret s'' v)
+          )
+      )
+    )"
   shows "wp_step (bbranch s p l) Q"
+proof -
+  obtain s' where "step_i\<^sup>*\<^sup>* (execi p b s) s' \<and> terminal_state_i s'"
   using assms
-  unfolding wp_step_def wp_gen_def step_def
-  by (auto split: result.splits llvm_block_return.splits)
+  unfolding wp_instrs_def sledgehammer
+
+
+  show ?thesis sorry
+qed
 
 lemma wp_steps_until_intro:
   assumes "has_annotation fs \<Longrightarrow> Q fs"
@@ -227,9 +250,16 @@ lemma floyd_vc_impl_annotation_holds:
   assumes "floyd_vc"
   shows "\<forall>fs fs'. annotation_holds fs \<and> fs \<Rightarrow> fs' \<longrightarrow> annotation_holds fs'"
   using assms
-  unfolding floyd_vc_def floyd_cond_def wp_annotated_step_def has_annotation_def annotated_step_def annotation_holds_def has_annotation_def step_def
-  apply (auto split: flow_state.splits) by force+
-  
+  unfolding floyd_vc_def floyd_cond_def 
+  apply (auto split: flow_state.splits)
+  subgoal for fs fs' a
+    unfolding annotation_holds_def annotated_step_def
+  apply (cases fs)
+    apply force apply force
+    by (metis (no_types, lifting) Steps.floyd_cond_def Steps.floyd_vc_def annotated_step_def
+        annotation_holds_def assms flow_state.case_eq_if flow_state.disc(6) flow_state.sel(4,5) option.simps(4)
+        wp_annotated_step_def)
+  done
 
 
 lemma floyd_vc_impl_annotated_steps_hold:

@@ -42,7 +42,7 @@ datatype llvm_instruction = alloca llvm_identifier llvm_type "llvm_align option"
                           | icmp llvm_identifier llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
                           | call llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
 
-datatype llvm_terminator_instruction = ret llvm_type llvm_value_ref
+datatype llvm_terminator_instruction = ret "(llvm_type * llvm_value_ref) option"
                                      | br_i1 llvm_value_ref llvm_identifier llvm_identifier
                                      | br_label llvm_identifier
 
@@ -53,7 +53,7 @@ type_synonym llvm_instruction_block = "(llvm_phi_node list * llvm_instruction li
 
 type_synonym llvm_labeled_blocks = "(llvm_identifier * llvm_instruction_block) list"
 
-datatype llvm_block_return = return_value llvm_value
+datatype llvm_block_return = return_value "llvm_value option"
                            | branch_label llvm_identifier
 
 datatype llvm_function = func llvm_type (blocks: llvm_labeled_blocks)

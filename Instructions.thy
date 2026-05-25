@@ -250,6 +250,371 @@ lemma [wp_intro]: "wp (execute_add name wrap v1 v2 s) Q \<Longrightarrow> wp (ex
 lemma [wp_intro]: "wp (execute_icmp name same_sign cond v1 v2 s) Q \<Longrightarrow> wp (execute_instruction (icmp name same_sign cond type v1 v2) s) Q"
   by simp
 
-definition "wp_instr i Q s \<equiv> wp (execute_instruction i s) Q"
+
+section "Phi nodes"
+
+fun phi_lookup :: "llvm_identifier option \<Rightarrow> (llvm_identifier * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
+  "phi_lookup l ls = do {
+    prev \<leftarrow> some_or_err l phi_no_previous_block;
+    assert phi_label_not_distinct (distinct (map fst ls));
+    some_or_err (map_of ls prev) phi_label_not_found
+  }"
+
+definition execute_phi :: "llvm_identifier option \<Rightarrow> llvm_phi_node \<Rightarrow> state \<Rightarrow> state result" where
+  "execute_phi prev p s = (case p of phi name type values \<Rightarrow> do {
+    v \<leftarrow> phi_lookup prev values;
+    v' \<leftarrow> get_register s v;
+    return (set_register name v' s)
+  })"
+
+lemma phi_wp_intro[THEN consequence, wp_intro]:
+  assumes "p = phi name t values"
+  assumes "distinct (map fst values)"
+  assumes "pre = Some pre'" "map_of values pre' = Some v" "register_\<alpha> s v = Some v'"
+  shows "wp (execute_phi pre p s) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s)"
+  unfolding execute_phi_def
+  using assms
+  by (simp; intro wp_intro; simp)
+
+
+fun execute_block :: "llvm_identifier option \<Rightarrow> llvm_instruction_block \<Rightarrow> state \<Rightarrow> (state * llvm_block_return) result" where
+  "execute_block previous (p#ps, is, t) s = do {
+    s' \<leftarrow> execute_phi previous p s;
+    execute_block previous (ps, is, t) s'
+  }"
+| "execute_block previous ([], i#is, t) s = do {
+    s' \<leftarrow> execute_instruction i s;
+    execute_block previous ([], is, t) s'
+  }"
+| "execute_block previous (_, _, br_i1 v l1 l2) s = do {
+    val \<leftarrow> get_register s v;
+    label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
+    return (s, branch_label label)
+  }"
+| "execute_block previous (_, _, br_label l) s = return (s, branch_label l)"
+| "execute_block previous (_, _, ret (Some (t, v))) s = do {
+    res \<leftarrow> get_register s v;
+    return (s, return_value (Some res))
+  }"
+| "execute_block previous (_, _, ret None) s = do {
+    return (s, return_value None)
+  }"
+
+
+
+
+datatype instruction_state = execi "llvm_identifier option" llvm_instruction_block state
+  | flowi state llvm_block_return
+  | is_erri: erri
+                                                    
+inductive step_i :: "instruction_state \<Rightarrow> instruction_state \<Rightarrow> bool" where
+  "step_i (execi pre ([],[],br_label l) s) (flowi s (branch_label l))"
+
+| "get_register s b = ok (vi1 b') \<Longrightarrow>
+    step_i (execi pre ([],[],br_i1 b l1 l2) s) (flowi s (branch_label (if b' then l1 else l2)))"
+| "\<nexists>b'. get_register s b = ok (vi1 b') \<Longrightarrow>
+    step_i (execi pre ([],[],br_i1 b l1 l2) s) erri"
+
+| "step_i (execi pre ([],[],ret None) s) (flowi s (return_value None))"
+
+| "get_register s v = ok v' \<Longrightarrow>
+    step_i (execi pre ([],[],ret (Some (t, v))) s) (flowi s (return_value (Some v')))"
+| "get_register s v = err _ \<Longrightarrow>
+    step_i (execi pre ([],[],ret (Some (t, v))) s) erri"
+
+| "execute_instruction i s = ok s' \<Longrightarrow>
+    step_i (execi pre ([],i#is,t) s) (execi pre ([],is,t) s')"
+| "execute_instruction i s = err _ \<Longrightarrow>
+    step_i (execi pre ([],i#is,t) s) erri"
+
+| "execute_phi pre p s = ok s' \<Longrightarrow>
+    step_i (execi pre (p#ps,is,t) s) (execi pre (ps,is,t) s')"
+| "execute_phi pre p s = err _ \<Longrightarrow>
+    step_i (execi pre (p#ps,is,t) s) erri"
+
+definition terminal_state_i where
+  "terminal_state_i s \<equiv> \<nexists>s'. step_i s s'"
+
+
+lemma term_state_i_simps[simp]:
+  "\<And>pre b s. \<not>terminal_state_i (execi pre b s)"
+  "\<And>s br. terminal_state_i (flowi s br)"
+  "terminal_state_i erri"
+  apply clarsimp
+  subgoal for pre phis instrs ter l g s h
+    unfolding terminal_state_i_def
+    apply (cases phis; cases instrs; cases ter)
+    subgoal for x apply (cases x) using step_i.intros apply blast
+      subgoal for r apply (cases r) using result.exhaust step_i.intros by meson
+      done
+    using step_i.intros result.exhaust by meson+
+  unfolding terminal_state_i_def using step_i.cases apply blast
+  unfolding terminal_state_i_def using step_i.cases by blast
+
+
+lemma steps_model_exec:
+  assumes "execute_block pre b s = ok (s', br)"
+  shows "step_i\<^sup>*\<^sup>* (execi pre b s) (flowi s' br)"
+proof (cases b)
+  case (fields phis instrs ter)
+
+  then show ?thesis
+    apply (subst fields)
+    using assms
+    proof (induction phis arbitrary: b s)
+      case Nil
+
+      then show ?case
+        proof (induction instrs arbitrary: b s)
+          case Nil
+
+          then show ?case
+            apply (cases ter)
+            subgoal for r by (cases r; auto simp: r_into_rtranclp step_i.intros)
+              apply (auto simp: r_into_rtranclp step_i.intros)
+            apply (auto split: llvm_value.splits)
+             apply (rule r_into_rtranclp)
+            using step_i.intros apply presburger 
+            apply (rule r_into_rtranclp)
+            using step_i.intros by presburger
+
+        next
+          case (Cons i ins)
+
+          obtain is' where nextstate: "execute_instruction i s = ok is'"
+            using Cons
+            by auto
+
+          then have "step_i\<^sup>*\<^sup>* (execi pre ([],ins,ter) is') (flowi s' br)"
+            using Cons
+            by auto
+
+          then show ?case 
+            using nextstate converse_rtranclp_into_rtranclp step_i.intros
+            by meson
+        qed
+      next
+        case (Cons p ps)
+
+        obtain ps' where nextstate: "execute_phi pre p s = ok ps'"
+          using Cons
+          by auto
+
+        then have "step_i\<^sup>*\<^sup>* (execi pre (ps,instrs,ter) ps') (flowi s' br)"
+          using Cons
+          by auto
+
+        then show ?case
+          using nextstate converse_rtranclp_into_rtranclp step_i.intros
+          by meson
+      qed
+    qed
+
+
+
+lemma single_step_eq_exec_step:
+  assumes "step_i (execi pre b s) (execi pre b' s')"
+  assumes "execute_block pre b' s' = ok (s'', br)"
+  shows "execute_block pre b s = ok (s'', br)"
+  using assms step_i.cases
+  by fastforce
+
+
+lemma step_i_deterministic:
+  assumes "step_i s s1"
+  assumes "step_i s s2"
+  shows "s1 = s2"
+proof -
+  show ?thesis
+    using assms
+    apply (cases s)
+    apply (smt (verit) Pair_inject instruction_state.inject(1) list.discI
+        llvm_terminator_instruction.distinct(3,5) llvm_terminator_instruction.inject(3)
+        step_i.cases)
+    
+    apply (smt (verit) instruction_state.inject(1) list.discI llvm_terminator_instruction.distinct(1,5)
+        llvm_terminator_instruction.inject(2) llvm_value.inject(1) prod.inject result.inject(1)
+        step_i.cases)
+
+    apply (smt (verit) Pair_inject instruction_state.inject list.discI
+        llvm_terminator_instruction.distinct llvm_terminator_instruction.inject
+        step_i.cases)
+    
+    apply (smt (verit, ccfv_SIG) Pair_inject instruction_state.inject(1) list.discI
+        llvm_terminator_instruction.distinct(1,3) llvm_terminator_instruction.inject(1) option.distinct(1)
+        step_i.cases)
+
+    defer
+         defer
+    apply (smt (verit, ccfv_SIG) fst_conv instruction_state.sel(1,2,3) list.discI list.inject
+        result.distinct(1) result.inject(1) snd_conv step_i.cases)
+    apply (smt (verit, ccfv_SIG) fst_conv instruction_state.sel(1,2,3) list.discI list.inject
+        result.distinct(1) result.inject(1) snd_conv step_i.cases)
+    apply (smt (verit, ccfv_SIG) fst_conv instruction_state.sel(1,2,3) list.discI list.inject
+        result.distinct(1) result.inject(1) snd_conv step_i.cases)
+    apply (smt (verit, ccfv_SIG) fst_conv instruction_state.sel(1,2,3) list.discI list.inject
+        result.distinct(1) result.inject(1) snd_conv step_i.cases)
+    subgoal premises prems for stat v v' pre t
+    proof (cases s2)
+      case (execi x11 x12 x13)
+      then show ?thesis
+        using prems
+        by (smt (verit) instruction_state.distinct(1,4) instruction_state.sel(2) list.discI prod.inject
+          step_i.cases)
+    next
+      case (flowi st br)
+
+      then obtain val where brdef: "br = return_value (Some val)"
+        using prems Pair_inject instruction_state.distinct(1,6) instruction_state.inject(1,2)
+            llvm_terminator_instruction.distinct(1,3) step_i.cases
+        by (smt (verit, ccfv_SIG) llvm_terminator_instruction.inject(1) option.distinct(1))
+
+      then have "get_register stat v = ok val"
+        using prems flowi step_i.cases
+        by blast
+
+      then show ?thesis                        
+        using brdef flowi prems(1,2,3,4) step_i.cases by auto
+    next
+      case erri
+      have "\<forall>e. get_register stat v \<noteq> err e" using prems by simp
+      then have "\<not>step_i s erri" using prems step_i.cases by blast
+      then show ?thesis using prems erri by blast
+    qed
+  subgoal premises prems for stat v v' pre t
+    proof (cases s2)
+      case (execi x11 x12 x13)
+      then show ?thesis
+        using prems
+        by (smt (verit) instruction_state.distinct(1,4) instruction_state.sel(2) list.discI prod.inject
+          step_i.cases)
+    next
+      case (flowi st br)
+
+      then obtain val where brdef: "br = return_value (Some val)"
+        using prems Pair_inject instruction_state.distinct(1,6) instruction_state.inject(1,2)
+            llvm_terminator_instruction.distinct(1,3) step_i.cases
+        by (smt (verit, ccfv_SIG) llvm_terminator_instruction.inject(1) option.distinct(1))
+
+      then have "get_register stat v = ok val"
+        using prems flowi step_i.cases
+        by blast
+
+      then show ?thesis                        
+        using brdef flowi prems(1,2,3,4) step_i.cases by auto
+    next
+      case erri
+      have "\<forall>e. get_register stat v \<noteq> ok e" using prems by simp
+      then show ?thesis using prems erri by blast
+    qed
+    done
+qed
+
+lemma step_i_reaches_terminal_state:
+  "\<exists>s'. step_i\<^sup>*\<^sup>* s s' \<and> terminal_state_i s'"
+  apply (induction s) apply auto
+  
+
+
+definition "wp_instrs s Q \<equiv> \<forall>s'. step_i\<^sup>*\<^sup>* s s' \<and> terminal_state_i s' \<longrightarrow> \<not>is_erri s' \<and> Q s'"
+
+lemma wp_impl_ok:
+  assumes "wp x Q"
+  shows "\<exists>v. x = ok v"
+  using assms
+  unfolding wp_gen_def
+  by (cases x; simp)
+
+
+lemma instrs_phi_intro:
+  assumes "wp (execute_phi pre p s) (\<lambda>s'. wp_instrs (execi pre (ps, is, t) s') Q)"
+  shows "wp_instrs (execi pre (p#ps, is, t) s) Q"
+proof -
+  obtain s' where nextstate: "execute_phi pre p s = ok s'"
+    using assms wp_impl_ok
+    by blast
+
+  show ?thesis using nextstate assms converse_rtranclpE fst_conv instruction_state.sel(1,2,3) list.discI 
+      list.inject result.distinct(1) result.simps(5) snd_conv step_i.cases term_state_i_simps(1)
+    unfolding wp_gen_def wp_instrs_def
+    by (smt (verit))
+qed
+
+lemma instrs_instr_intro:
+  assumes "wp (execute_instruction i s) (\<lambda>s'. wp_instrs (execi pre ([], is, t) s') Q)"
+  shows "wp_instrs (execi pre ([], i#is, t) s) Q"
+proof -
+  obtain s' where nextstate: "execute_instruction i s = ok s'"
+    using assms wp_impl_ok
+    by blast
+
+  show ?thesis using nextstate assms converse_rtranclpE fst_conv instruction_state.sel(1,2,3) list.discI 
+      list.inject result.distinct(1) result.simps(5) snd_conv step_i.cases term_state_i_simps(1)
+    unfolding wp_gen_def wp_instrs_def
+    by (smt (verit))
+qed
+
+lemma block_ret_wp_intro:
+  assumes "register_\<alpha> s value = Some v"
+  assumes "Q (flowi s (return_value (Some v)))"
+  shows "wp_instrs (execi pre ([], [], ret (Some (type, value))) s) Q"
+  unfolding wp_instrs_def
+  using assms
+  apply (intro impI allI) apply (elim conjE)
+  subgoal premises prems for s'
+    proof -
+      have "step_i (execi pre ([], [], ret (Some (type, value))) s) (flowi s (return_value (Some v)))"
+        using prems step_i.intros
+        by auto
+
+        then show ?thesis using step_i_deterministic
+          by (smt (verit, ccfv_SIG)
+              converse_rtranclpE instruction_state.distinct(6) is_erri_def prems(2,3,4) step_i.cases
+              term_state_i_simps(1,2))
+    qed
+  done
+
+lemma block_ret_None_wp_intro:
+  assumes "Q (flowi s (return_value None))"
+  shows "wp_instrs (execi pre ([], [], ret None) s) Q"
+  unfolding wp_instrs_def
+  using assms
+  apply (intro impI allI) apply (elim conjE)
+  subgoal premises prems for s'
+    proof -
+      have "step_i (execi pre ([], [], ret None) s) (flowi s (return_value None))"
+        using prems step_i.intros
+        by auto
+
+        then show ?thesis using step_i_deterministic
+          by (smt (verit, ccfv_SIG)
+              converse_rtranclpE instruction_state.distinct(6) is_erri_def prems step_i.cases
+              term_state_i_simps(1,2))
+    qed
+  done
+
+
+lemma block_br_label_wp_intro:
+  assumes "Q (flowi s (branch_label l))"
+  shows "wp_instrs (execi pre ([], [], br_label l) s) Q"
+  unfolding wp_instrs_def
+  using assms
+  apply (intro impI allI) apply (elim conjE)
+  by (smt (verit) converse_rtranclpE instruction_state.disc instruction_state.inject list.discI
+      llvm_terminator_instruction.distinct llvm_terminator_instruction.inject prod.inject
+      result.distinct(1) result.inject(1) step_i.cases term_state_i_simps(1,2))
+
+lemma block_br_i1_wp_intro:
+  assumes "register_\<alpha> s value = Some (vi1 b)"
+  assumes "Q (flowi s (branch_label (if b then l1 else l2)))"
+  shows "wp_instrs (execi pre ([], [], br_i1 value l1 l2) s) Q"
+  unfolding wp_instrs_def
+  using assms
+  apply (intro impI allI) apply (elim conjE)
+  by (smt (verit) converse_rtranclpE instruction_state.disc(8) instruction_state.inject(1) list.discI
+      llvm_terminator_instruction.distinct(1,5) llvm_terminator_instruction.inject(2) llvm_value.inject(1)
+      prod.inject result.inject(1) step_i.cases term_state_i_simps(1,2) register_\<alpha>_eq_get_register)
+  
+
 
 end

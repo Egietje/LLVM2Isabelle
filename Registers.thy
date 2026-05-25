@@ -32,6 +32,12 @@ lemma register_\<alpha>_update_independent[simp]:
   "(register_\<alpha> s)(x := v) = register_\<alpha> s' \<Longrightarrow> x \<noteq> y \<Longrightarrow> register_\<alpha> s y = register_\<alpha> s' y"
   by (metis fun_upd_other)
 
+lemma register_\<alpha>_eq_get_register[simp]:
+  "register_\<alpha> s v = Some v' \<longleftrightarrow> get_register s v = ok v'"
+  apply (cases s; cases v; auto)
+  subgoal for _ _ _ _ n by (cases n; simp)
+  subgoal for _ _ _ _ n by (cases n; simp split: option.splits)
+  done
 
 
 section "register_\<alpha> operation"
