@@ -40,7 +40,7 @@ datatype llvm_instruction = alloca llvm_identifier llvm_type "llvm_align option"
                           | load llvm_identifier llvm_type llvm_pointer "llvm_align option"
                           | add llvm_identifier llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
                           | icmp llvm_identifier llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | call llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
+                          | call "llvm_identifier option" llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
 
 datatype llvm_terminator_instruction = ret "(llvm_type * llvm_value_ref) option"
                                      | br_i1 llvm_value_ref llvm_identifier llvm_identifier
@@ -59,7 +59,7 @@ datatype llvm_block_return = return_value "llvm_value option"
 datatype llvm_function = func llvm_type (blocks: llvm_labeled_blocks)
 hide_const (open) llvm_function.blocks
 
-datatype llvm_program = program "(llvm_identifier * llvm_function) list"
+datatype llvm_program = program (funcs: "(llvm_identifier * llvm_function) list")
 
 
 

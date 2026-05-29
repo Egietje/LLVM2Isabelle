@@ -318,26 +318,29 @@ definition mult_function :: llvm_function where
     ]
   )"
 
+definition mult_program :: llvm_program where
+  "mult_program \<equiv> (program [(gid ''mult'', mult_function)])"
+
 
 lemma mult_floyd:
   "floyd_vc
-    mult_function
-    [
+    mult_program
+    [(gid ''mult'', ([
       ((None, lid ''entry''),   mult_pre),
       ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
       ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
-    ]
-    mult_post"
+    ], mult_post))]"
   including word_bundle
-  apply (unfold_floyd_vc defs: mult_function_def)
+  apply (unfold_floyd func_def: mult_function_def prog_def: mult_program_def)
 
-  subgoal (* entry \<rightarrow> cond \<rightarrow> body *)
-    apply (unfold_wp_annotated_step)
-    apply (block_vcg blocks: mult_entry_def pres: mult_pre_def)
-    apply (unfold_wp_steps_until)
-    apply (block_vcg blocks: mult_cond_def, simp; (simp; fail)?) apply (simp (no_asm))
-    apply (unfold_wp_steps_until)
-    apply (unfold mult_body_pre_def)
+  subgoal (* end \<rightarrow> return *)
+    apply unfold_wp_annotated_step
+    apply (block_vcg blocks: mult_end_def pres: mult_end_pre_def)
+    apply (rule wp_steps_until_intro)
+     apply auto defer apply (subst (asm) has_annotation_def)
+     apply force
+    apply (subst (asm) has_annotation_def) apply auto
+    apply (subst mult_post_def)
     by fastforce
 
 
@@ -347,16 +350,14 @@ lemma mult_floyd:
     apply (unfold_wp_steps_until)
     apply (block_vcg blocks: mult_inc_def)
     apply (unfold_wp_steps_until)
-    apply (block_vcg blocks: mult_cond_def, simp; (simp; fail)?)
+    apply (block_vcg blocks: mult_cond_def)
     
     subgoal (* cond \<rightarrow> body *)
-      apply (simp (no_asm))
       apply (unfold_wp_steps_until)
       apply (subst mult_body_pre_def)
       by (auto simp: distrib_left)
     
     subgoal (* cond \<longrightarrow> end *)
-      apply (simp (no_asm))
       apply (unfold_wp_steps_until)
       apply (subst mult_end_pre_def)
       by auto
@@ -364,34 +365,63 @@ lemma mult_floyd:
     done
 
 
-  subgoal (* end \<rightarrow> return *)
+
+  subgoal (* entry \<rightarrow> cond \<rightarrow> body *)
     apply (unfold_wp_annotated_step)
-    apply (block_vcg blocks: mult_end_def pres: mult_end_pre_def)
-     apply simp
-    apply (simp (no_asm))
+    apply (block_vcg blocks: mult_entry_def pres: mult_pre_def)
     apply (unfold_wp_steps_until)
-    apply (subst mult_post_def)
+    apply (block_vcg blocks: mult_cond_def, simp; (simp; fail)?)
+    apply (unfold_wp_steps_until)
+    apply (unfold mult_body_pre_def)
     by fastforce
 
   done
 
 lemma mult_correct:
   assumes "mult_pre s"
-  assumes "steps mult_function (bbranch s None (lid ''entry'')) (bret s' v)"
+  assumes "steps_f mult_program (branchf s None (lid ''entry'') (gid ''mult'')) (retf s' v (gid ''mult''))"
   shows "mult_post s' v"
 proof -
-  have "annotation_holds [
+  have "annotation_holds mult_program [(gid ''mult'', ([
       ((None, lid ''entry''),   mult_pre),
       ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
       ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
-    ] mult_post (bbranch s None (lid ''entry''))"
-    using assms annotation_holds_def
+    ], mult_post))] (branchf s None (lid ''entry'') (gid ''mult''))"
+    using assms unfolding annotation_holds_def mult_program_def
     by fastforce
 
-  then show ?thesis
-    using mult_floyd floyd_vc_impl_wp_step wp_steps_def assms empty_eq_map_of_iff flow_state.sel(1,3)
-      floyd_vc_def if_Some_None_eq_None map_of_Cons_code(2) snd_conv terminal_state_simps(2)
-    by (smt (verit))
+  moreover
+
+  have "has_annotation mult_program [(gid ''mult'', ([
+      ((None, lid ''entry''),   mult_pre),
+      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
+      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
+    ], mult_post))] (retf s' v (gid ''mult''))"
+    using assms unfolding has_annotation_def mult_program_def
+    by fastforce
+
+  then
+
+  have "annotated_steps mult_program [(gid ''mult'', ([
+      ((None, lid ''entry''),   mult_pre),
+      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
+      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
+    ], mult_post))] (branchf s None (lid ''entry'') (gid ''mult'')) (retf s' v (gid ''mult''))"
+    using assms(2) steps_to_annotation_impl_annotated_steps
+    by presburger
+
+  ultimately
+
+  have "annotation_holds mult_program [(gid ''mult'', ([
+      ((None, lid ''entry''),   mult_pre),
+      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
+      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
+    ], mult_post))] (retf s' v (gid ''mult''))"
+    using floyd_vc_impl_annotated_steps_hold mult_floyd by blast
+  then
+  show ?thesis
+    using annotation_holds_def
+    by simp
 qed
 
 
