@@ -76,4 +76,16 @@ lemma wp_get_register_intro[THEN consequence, wp_intro]:
   apply (cases s; cases n) subgoal for _ _ _ _ id by (cases id; simp; intro wp_intro; auto)
   by simp
 
+
+
+section "Stack Frames"
+
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (lid n)) = register_\<alpha> s (reg (lid n))"
+  by (cases s; cases s'; cases s''; cases s'''; fastforce)
+
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (gid n)) = register_\<alpha> s'' (reg (gid n))"
+  by (cases s; cases s'; cases s''; cases s'''; fastforce)
+
+
+
 end

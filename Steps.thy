@@ -14,7 +14,14 @@ datatype instruction_state = execi "llvm_identifier option" llvm_instruction_blo
 datatype (discs_sels) function_state = branchf (state: state) "llvm_identifier option" llvm_identifier llvm_identifier
   | retf (state: state) (ret_value: "llvm_value option") llvm_identifier
   | is_errf: errf 
+
+
 definition "first_label f \<equiv> (case llvm_function.blocks f of ((l,b)#fs) \<Rightarrow> Some l | _ \<Rightarrow> None)"
+
+
+
+
+
 
 
 inductive

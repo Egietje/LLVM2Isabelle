@@ -63,7 +63,7 @@ datatype llvm_program = program (funcs: "(llvm_identifier * llvm_function) list"
 
 
 
-section "Registers and Memory"
+section "State"
 
 
 subsection "Definitions"
@@ -124,9 +124,14 @@ definition allocate_heap :: "state \<Rightarrow> (state * llvm_address)" where
 
 
 (* Address validity *)
+definition allocated_single_memory_address :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> bool" where
+  "allocated_single_memory_address m a = (a < length m)"
 definition valid_single_memory_address :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> bool" where
-  "valid_single_memory_address m a = (a < length m \<and> m!a \<noteq> mem_freed)"
+  "valid_single_memory_address m a = (allocated_single_memory_address m a \<and> m!a \<noteq> mem_freed)"
 
+fun allocated_memory_address :: "state \<Rightarrow> llvm_address \<Rightarrow> bool" where
+  "allocated_memory_address (l,g,s,h) (haddr a) = allocated_single_memory_address h a"
+| "allocated_memory_address (l,g,s,h) (saddr a) = allocated_single_memory_address s a"
 fun valid_memory_address :: "state \<Rightarrow> llvm_address \<Rightarrow> bool" where
   "valid_memory_address (l,g,s,h) (haddr a) = valid_single_memory_address h a"
 | "valid_memory_address (l,g,s,h) (saddr a) = valid_single_memory_address s a"
@@ -135,11 +140,11 @@ fun valid_memory_address :: "state \<Rightarrow> llvm_address \<Rightarrow> bool
 (* Get *)
 definition get_single_memory :: "'a memory_model \<Rightarrow> memory_model_address \<Rightarrow> 'a result" where
   "get_single_memory m a = do {
-    assert unallocated_address (valid_single_memory_address m a);
+    assert invalid_address (allocated_single_memory_address m a);
     (case (m!a) of
-      mem_unset \<Rightarrow> err uninitialized_address
+      mem_unset \<Rightarrow> err invalid_address
     | mem_val v \<Rightarrow> ok v
-    | mem_freed \<Rightarrow> err unallocated_address)
+    | mem_freed \<Rightarrow> err invalid_address)
   }"
 
 fun get_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value result" where
@@ -150,7 +155,7 @@ fun get_memory :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value res
 (* Set *)
 definition set_single_memory :: "memory_model_address \<Rightarrow> 'a \<Rightarrow> 'a memory_model \<Rightarrow> 'a memory_model result" where
   "set_single_memory a v m = do {
-    assert unallocated_address (valid_single_memory_address m a);
+    assert invalid_address (valid_single_memory_address m a);
     return (m[a:=(mem_val v)])
   }"
 
@@ -168,7 +173,7 @@ fun set_memory :: "llvm_address \<Rightarrow> llvm_value \<Rightarrow> state \<R
 (* Free *)
 definition free_single_memory :: "memory_model_address \<Rightarrow> 'a memory_model \<Rightarrow> 'a memory_model result" where
   "free_single_memory a m = do {
-    assert unallocated_address (valid_single_memory_address m a);
+    assert invalid_address (valid_single_memory_address m a);
     return (m[a:=mem_freed])
   }"
 
@@ -183,20 +188,25 @@ fun free_memory :: "llvm_address \<Rightarrow> state \<Rightarrow> state result"
   }"
 
 
+
+subsection "Stack Frames"
+
+fun push_frame :: "state \<Rightarrow> state" where "push_frame (l,g,s,h) = (empty_register,g,s,h)"
+fun pop_frame :: "state \<Rightarrow> state \<Rightarrow> state" where "pop_frame (l,_,s,_) (_,g,s',h) = (l,g,take (length s) s',h)"
+
+
+
 section "Abstractions"
 
 
 subsection "Memory"
 
 definition single_memory_\<alpha> where
-  "single_memory_\<alpha> m a \<equiv> if valid_single_memory_address m a then 
-    case m!a of 
-      mem_val v \<Rightarrow> Some (Some v)
-    | mem_unset \<Rightarrow> Some None
-    | mem_freed \<Rightarrow> None
+  "single_memory_\<alpha> m a \<equiv> if allocated_single_memory_address m a
+  then Some (m!a)
   else None"
 
-fun memory_\<alpha> :: "state \<Rightarrow> llvm_address \<Rightarrow> llvm_value option option" where
+fun memory_\<alpha> :: "state \<Rightarrow> llvm_address \<Rightarrow> (llvm_value memory_value) option" where
   "memory_\<alpha> (l,g,s,h) (saddr a) = single_memory_\<alpha> s a"
 | "memory_\<alpha> (l,g,s,h) (haddr a) = single_memory_\<alpha> h a"
 
@@ -207,5 +217,7 @@ fun register_\<alpha> :: "state \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_
   "register_\<alpha> (l,g,s,h) (val v) = Some v"
 | "register_\<alpha> (l,g,s,h) (reg (lid n)) = Mapping.lookup l n"
 | "register_\<alpha> (l,g,s,h) (reg (gid n)) = Mapping.lookup g n"
+
+
 
 end
