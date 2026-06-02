@@ -43,16 +43,27 @@ where
 | "get_register s v = err _ \<Longrightarrow>
     (execi pre ([],[],ret (Some (t, v))) s) \<rightarrow>\<^sub>i erri"
 
-(*
+
 | "map_of (funcs program) f = Some fu
   \<Longrightarrow> first_label fu = Some b
-  \<Longrightarrow> step_f\<^sup>*\<^sup>* (branchf (new_frame s) None b fu) (retf s' v')
-  \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) (restore_frame s s'))"
-*)
-| "execute_instruction i s = ok s' \<Longrightarrow>
-    (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) s')"
-| "execute_instruction i s = err _ \<Longrightarrow>
-    (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i erri"
+  \<Longrightarrow> step_f\<^sup>*\<^sup>* (branchf (push_frame s) None b f) (retf s' v' f)
+  \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) (pop_frame s s'))"
+| "map_of (funcs program) f = None
+  \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i erri"
+| "map_of (funcs program) f = Some fu
+  \<Longrightarrow> first_label fu = None
+  \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i erri"
+| "map_of (funcs program) f = Some fu
+  \<Longrightarrow> first_label fu = Some b
+  \<Longrightarrow> step_f\<^sup>*\<^sup>* (branchf (push_frame s) None b f) errf
+  \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i erri"
+
+| "execute_instruction i s = ok s'
+  \<Longrightarrow> \<not>is_call i
+  \<Longrightarrow> (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) s')"
+| "execute_instruction i s = err _
+  \<Longrightarrow> \<not>is_call i
+  \<Longrightarrow> (execi pre ([],i#is,t) s) \<rightarrow>\<^sub>i erri"
 
 | "execute_phi pre p s = ok s' \<Longrightarrow>
     (execi pre (p#ps,is,t) s) \<rightarrow>\<^sub>i (execi pre (ps,is,t) s')"
@@ -84,27 +95,20 @@ abbreviation steps_i (infix "\<rightarrow>\<^sub>i*" 50) where
 abbreviation steps_f :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>f*" 50) where
   "s \<rightarrow>\<^sub>f* s' \<equiv> step_f\<^sup>*\<^sup>* s s'"
 
-fun n_steps_i :: "instruction_state \<Rightarrow> nat \<Rightarrow> instruction_state \<Rightarrow> bool" where
-  "n_steps_i s 0 s'  = (s = s')"
-| "n_steps_i s (Suc n) s' = (\<exists>x. s \<rightarrow>\<^sub>i x \<and> n_steps_i x n s')"
-fun n_steps_f :: "function_state \<Rightarrow> nat \<Rightarrow> function_state \<Rightarrow> bool" where
-  "n_steps_f s 0 s'  = (s = s')"
-| "n_steps_f s (Suc n) s' = (\<exists>x. s \<rightarrow>\<^sub>f x \<and> n_steps_f x n s')"
+fun n_steps :: "'a \<Rightarrow> ('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> bool" where
+  "n_steps s R 0 s'  = (s = s')"
+| "n_steps s R (Suc n) s' = (\<exists>x. R s x \<and> n_steps x R n s')"
 
-notation n_steps_i ("(_ \<rightarrow>\<^sub>i^_ _)" [51, 0, 51] 50)
-notation n_steps_f ("(_ \<rightarrow>\<^sub>f^_ _)" [51, 0, 51] 50)
+notation n_steps ("(_ (_)^_ _)" [51, 0, 0, 51] 50)
 
 
-lemma steps_i_exists_n_steps[simp]:
-  assumes "fs \<rightarrow>\<^sub>i* fs'"
-  shows "\<exists>n. fs \<rightarrow>\<^sub>i^n fs'"
-  using assms n_steps_i.simps
-  by (induction rule: converse_rtranclp_induct; blast)
-lemma steps_f_exists_n_steps[simp]:
-  assumes "fs \<rightarrow>\<^sub>f* fs'"
-  shows "\<exists>n. fs \<rightarrow>\<^sub>f^n fs'"
-  using assms n_steps_f.simps
-  by (induction rule: converse_rtranclp_induct; blast)
+lemma closure_steps_exists_n_steps[simp]:
+  assumes "R\<^sup>*\<^sup>* fs fs' "
+  shows "\<exists>n. fs (R)^n fs'"
+  using assms
+  apply (induction rule: converse_rtranclp_induct)
+  using n_steps.simps by meson+
+
 
 definition terminal_state_i where
   "terminal_state_i s \<equiv> \<nexists>s'. s \<rightarrow>\<^sub>i s'"
@@ -115,197 +119,25 @@ notation terminal_state_i ("_ \<nexists>\<rightarrow>\<^sub>i" 50)
 notation terminal_state_f ("_ \<nexists>\<rightarrow>\<^sub>f" 50)
 
 lemma term_state_i_simps[simp]:
-  "\<not> ((execi pre b s) \<nexists>\<rightarrow>\<^sub>i)"
   "(flowi s br) \<nexists>\<rightarrow>\<^sub>i"
   "erri \<nexists>\<rightarrow>\<^sub>i"
-    apply clarsimp
-    apply (cases b; cases s)
-  
-  subgoal for phis instrs ter l g s h
-    unfolding terminal_state_i_def
-    apply (cases phis; cases instrs; cases ter)
-    subgoal for x apply (cases x) using step_i_step_f.intros apply blast
-      subgoal for r apply (cases r) using result.exhaust step_i_step_f.intros by meson
-      done
-    using step_i_step_f.intros result.exhaust by meson+
-  unfolding terminal_state_i_def using step_i.cases apply blast
-  unfolding terminal_state_i_def using step_i.cases by blast
+  unfolding terminal_state_i_def
+  using step_i.cases apply blast
+  using step_i.cases by blast
 
-lemma step_i_reaches_term_state:
-  "\<exists>s'. execi pre b s \<rightarrow>\<^sub>i* s' \<and> (s' \<nexists>\<rightarrow>\<^sub>i)"
-  apply (cases b)
-  subgoal for phis instrs ter
-  proof (induction phis arbitrary: pre b s)
-    case Nil
-    then show ?case
-    proof (induction instrs arbitrary: pre b s)
-      case Nil
-      then show ?case 
-        by (smt (verit) fst_conv instruction_state.sel(2) list.discI rtranclp.rtrancl_into_rtrancl
-           rtranclp.rtrancl_refl snd_conv step_i.cases term_state_i_simps(2,3) terminal_state_i_def)
-    next
-      case (Cons a instrs)
-
-      show ?case
-      proof (cases "execi pre ([],a#instrs,ter) s \<rightarrow>\<^sub>i erri")
-        case True
-        then show ?thesis 
-          using Cons.prems term_state_i_simps(3) by blast
-      next
-        case False
-
-        have "\<exists>s'. execi pre ([],a#instrs,ter) s \<rightarrow>\<^sub>i execi pre ([],instrs,ter) s' \<or> execi pre ([],a#instrs,ter) s \<rightarrow>\<^sub>i erri"
-          by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject step_i.cases
-              term_state_i_simps(1) terminal_state_i_def)
-
-        then obtain s' where "execi pre ([],a#instrs,ter) s \<rightarrow>\<^sub>i execi pre ([],instrs,ter) s'"
-          using False by blast
-
-        then show ?thesis using Cons False Nil
-          by (metis rtranclp_idemp rtranclp.rtrancl_into_rtrancl rtranclp.rtrancl_refl)
-      qed
-    qed
-  next
-    case (Cons a phis)
-    obtain s' where nextstate: "execi pre b s \<rightarrow>\<^sub>i s'"
-      using term_state_i_simps(1) terminal_state_i_def by blast
-    then show ?case
-    proof (cases "execi pre (a#phis,instrs,ter) s \<rightarrow>\<^sub>i erri")
-      case True
-      then show ?thesis
-          using Cons.prems term_state_i_simps(3) by blast
-    next
-      case False
-      have "\<exists>s'. execi pre (a#phis,instrs,ter) s \<rightarrow>\<^sub>i execi pre (phis,instrs,ter) s' \<or> execi pre (a#phis,instrs,ter) s \<rightarrow>\<^sub>i erri"
-          by (smt (verit) instruction_state.inject(1) list.discI list.inject prod.inject step_i.cases
-              term_state_i_simps(1) terminal_state_i_def)
-      then obtain s' where "execi pre (a#phis,instrs,ter) s \<rightarrow>\<^sub>i execi pre (phis,instrs,ter) s'"
-          using False by blast
-
-      then show ?thesis using Cons
-        by (metis rtranclp_idemp rtranclp.rtrancl_into_rtrancl rtranclp.rtrancl_refl)
-    qed
-
-  qed
-  done
 
 lemma term_state_f_simps[simp]:
   "errf \<nexists>\<rightarrow>\<^sub>f"
   "retf s v f \<nexists>\<rightarrow>\<^sub>f"
-  "\<not> ((branchf s prev lab f) \<nexists>\<rightarrow>\<^sub>f)"
   unfolding terminal_state_f_def
-    apply simp
   using step_f.cases apply blast
-  using step_f.cases apply blast
-  apply (cases "map_of (funcs program) f") 
-  using step_i_step_f.intros(15) apply blast
-  subgoal for fu
-  apply (cases "map_of (llvm_function.blocks fu) lab")
-  using step_i_step_f.intros(14) apply blast
-  subgoal premises prems for b
-  proof (cases "execi prev b s \<rightarrow>\<^sub>i* erri")
-    case True
-    then show ?thesis
-      using step_i_step_f.intros(13) prems
-      by blast
-  next
-    case False
-
-    then obtain ts where "execi prev b s \<rightarrow>\<^sub>i* ts \<and> ts \<nexists>\<rightarrow>\<^sub>i"
-      using step_i_reaches_term_state
-      by blast
-    
-    then obtain s' br where "execi prev b s \<rightarrow>\<^sub>i* flowi s' br"
-      by (metis False instruction_state.collapse(3) instruction_state.exhaust_disc is_execi_def is_flowi_def
-          term_state_i_simps(1))
-      
-    then show ?thesis
-      using prems step_i_step_f.intros
-      by (cases br; meson)
-  qed
-  done
-  done
+  using step_f.cases by blast
 
 
-lemma steps_model_exec:
-  assumes "execute_block pre b s = ok (s', br)"
-  shows "(execi pre b s) \<rightarrow>\<^sub>i* (flowi s' br)"
-proof (cases b)
-  case (fields phis instrs ter)
-
-  then show ?thesis
-    apply (subst fields)
-    using assms
-    proof (induction phis arbitrary: b s)
-      case Nil
-
-      then show ?case
-        proof (induction instrs arbitrary: b s)
-          case Nil
-
-          then show ?case
-            apply (cases ter)
-            subgoal for r by (cases r; auto simp: r_into_rtranclp step_i_step_f.intros)
-              apply (auto simp: r_into_rtranclp step_i_step_f.intros)
-            apply (auto split: llvm_value.splits)
-             apply (rule r_into_rtranclp)
-            using step_i_step_f.intros apply presburger 
-            apply (rule r_into_rtranclp)
-            using step_i_step_f.intros by presburger
-
-        next
-          case (Cons i ins)
-
-          obtain is' where nextstate: "execute_instruction i s = ok is'"
-            using Cons
-            by auto
-
-          then have "(execi pre ([],ins,ter) is')  \<rightarrow>\<^sub>i* (flowi s' br)"
-            using Cons
-            by auto
-
-          then show ?case 
-            using nextstate converse_rtranclp_into_rtranclp step_i_step_f.intros
-            by meson
-        qed
-      next
-        case (Cons p ps)
-
-        obtain ps' where nextstate: "execute_phi pre p s = ok ps'"
-          using Cons
-          by auto
-
-        then have "(execi pre (ps,instrs,ter) ps')  \<rightarrow>\<^sub>i* (flowi s' br)"
-          using Cons
-          by auto
-
-        then show ?case
-          using nextstate converse_rtranclp_into_rtranclp step_i_step_f.intros
-          by meson
-      qed
-    qed
-
-lemma single_step_eq_exec_step:
-  assumes "(execi pre b s)  \<rightarrow>\<^sub>i (execi pre b' s')"
-  assumes "execute_block pre b' s' = ok (s'', br)"
-  shows "execute_block pre b s = ok (s'', br)"
-  using assms step_i.cases
-  by fastforce
-
-
-find_theorems "x = y \<Longrightarrow> y = x"
 
 thm step_i_step_f.induct
 thm step_i_step_f.inducts
 
-lemma steps_i_deter:
-  "st \<rightarrow>\<^sub>i* st' \<Longrightarrow> st' \<nexists>\<rightarrow>\<^sub>i \<Longrightarrow> st \<rightarrow>\<^sub>i* st'' \<Longrightarrow> st'' \<nexists>\<rightarrow>\<^sub>i \<Longrightarrow> st' = st''"
-        apply (induction rule: converse_rtranclp_induct)
-         apply (metis terminal_state_i_def converse_rtranclpE)
-        by (smt (verit) converse_rtranclpE instruction_state.sel(1,2,3) list.discI list.inject
-            llvm_terminator_instruction.distinct(1,3,5) llvm_terminator_instruction.inject(1,2,3) llvm_value.inject(1)
-            option.distinct(1) option.simps(1) prod.inject result.distinct(1) result.inject(1) step_i.cases
-            term_state_i_simps(1))
 lemma
   assumes "(\<lambda>s s'. R s s' \<and> (\<forall>s''. R s s'' \<longrightarrow> s' = s''))\<^sup>*\<^sup>* s s1 \<and> (\<nexists>s'. (\<lambda>s s'. R s s' \<and> (\<forall>s''. R s s'' \<longrightarrow> s' = s'')) s1 s')"
   assumes "(\<lambda>s s'. R s s' \<and> (\<forall>s''. R s s'' \<longrightarrow> s' = s''))\<^sup>*\<^sup>* s s2 \<and> (\<nexists>s'. (\<lambda>s s'. R s s' \<and> (\<forall>s''. R s s'' \<longrightarrow> s' = s'')) s2 s')"
@@ -319,19 +151,130 @@ lemma
   done
 
 lemma step_deterministic[simp]:
-  "si \<rightarrow>\<^sub>i si1 \<Longrightarrow> si \<rightarrow>\<^sub>i si2 \<Longrightarrow> si1 = si2"
-  "sf \<rightarrow>\<^sub>f sf1 \<Longrightarrow> sf \<rightarrow>\<^sub>f sf2 \<Longrightarrow> sf1 = sf2"
-  apply (induction arbitrary: si2 rule: step_i_step_f.inducts)
-               apply (auto simp add: step_i.simps)[10]
-  apply (smt (verit, best) function_state.sel(1,3,4,5) instruction_state.distinct(6) instruction_state.inject(2)
-          llvm_block_return.distinct(1) llvm_block_return.inject(2) mono_rtranclp option.distinct(1) option.sel
-          step_f.cases term_state_i_simps(2,3) steps_i_deter) 
-  apply (smt (verit, best) function_state.sel instruction_state.distinct instruction_state.inject
-          llvm_block_return.distinct(1) llvm_block_return.inject mono_rtranclp option.distinct(1) option.sel
-          step_f.cases term_state_i_simps steps_i_deter)
-  apply (smt (verit, best) function_state.sel instruction_state.distinct instruction_state.inject
-          llvm_block_return.distinct(1) llvm_block_return.inject mono_rtranclp option.distinct(1) option.sel
-          step_f.cases term_state_i_simps steps_i_deter)
+  "si \<rightarrow>\<^sub>i si' \<Longrightarrow> \<forall>s'. si \<rightarrow>\<^sub>i s' \<longrightarrow> s' = si'"
+  "sf \<rightarrow>\<^sub>f sf' \<Longrightarrow> \<forall>s'. sf \<rightarrow>\<^sub>f s' \<longrightarrow> s' = sf'"
+   apply (induction arbitrary: rule: step_i_step_f.inducts)
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  subgoal premises prems for f fu b s s' v' pre na ty p ins t
+  proof -
+    have "branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s' v' f"
+      by (metis (no_types, lifting) mono_rtranclp prems(3))
+
+    then have "\<And>s'' v'' f'. branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s'' v'' f' \<longrightarrow> (s'' = s' \<and> v'' = v' \<and> f' = f)"
+      using prems(3) 
+      apply (induction rule: converse_rtranclp_induct)
+      apply (metis function_state.inject(2) terminal_state_f_def converse_rtranclpE Steps.term_state_f_simps(2))
+      by (smt (verit, best) converse_rtranclpE function_state.distinct(1) step_f.cases)
+
+    moreover
+
+    have "\<not>(branchf (push_frame s) None b f) \<rightarrow>\<^sub>f* errf"
+      using prems(3) apply (induction rule: converse_rtranclp_induct)
+      apply (metis terminal_state_f_def term_state_f_simps(2) converse_rtranclpE function_state.distinct(5))
+      by (smt (verit, best) converse_rtranclpE function_state.distinct step_f.cases)
+
+    ultimately
+
+    show ?thesis
+      using prems step_i.simps
+      by auto
+  qed
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  subgoal premises prems for f fu b s pre na ty p ins t
+  proof -
+    have "branchf (push_frame s) None b f \<rightarrow>\<^sub>f* errf"
+      by (metis (no_types, lifting) mono_rtranclp prems(3))
+
+    moreover
+
+    have "\<And>s' v' f'. \<not>(branchf (push_frame s) None b f) \<rightarrow>\<^sub>f* retf s' v' f'"
+      using prems(3)
+      apply (induction rule: converse_rtranclp_induct) 
+      apply (metis terminal_state_f_def term_state_f_simps(1) converse_rtranclpE function_state.distinct(5))
+      by (smt (verit, best) converse_rtranclpE function_state.distinct step_f.cases)
+
+    ultimately
+
+    show ?thesis
+      using step_i.simps prems
+      by auto
+  qed
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  using step_i.simps apply fastforce
+  subgoal premises prems for f fu lab b prev s s' l
+  proof -
+    have "execi prev b s \<rightarrow>\<^sub>i* flowi s' (branch_label l)"
+      by (metis (no_types, lifting) mono_rtranclp prems(3))
+
+    then have "\<And>s'' br. execi prev b s \<rightarrow>\<^sub>i* flowi s'' br \<longrightarrow> (s'' = s' \<and> br = branch_label l)"
+      using prems(3) 
+      apply (induction rule: converse_rtranclp_induct)
+      apply (metis instruction_state.inject(2) terminal_state_i_def converse_rtranclpE Steps.term_state_i_simps(1))
+      by (smt (verit, best) converse_rtranclpE instruction_state.distinct(1) step_i.cases)
+
+    moreover
+
+    have "\<not>execi prev b s \<rightarrow>\<^sub>i* erri"
+      using prems(3) apply (induction rule: converse_rtranclp_induct)
+      apply (metis terminal_state_i_def term_state_i_simps(1) converse_rtranclpE instruction_state.distinct(5))
+      by (smt (verit, best) converse_rtranclpE instruction_state.distinct step_i.cases)
+
+    ultimately
+
+    show ?thesis
+      using prems step_f.simps
+      by fastforce
+  qed
+  subgoal premises prems for f fu lab b prev s s' v
+  proof -
+    have "execi prev b s \<rightarrow>\<^sub>i* flowi s' (return_value v)"
+      by (metis (no_types, lifting) mono_rtranclp prems(3))
+
+    then have "\<And>s'' br. execi prev b s \<rightarrow>\<^sub>i* flowi s'' br \<longrightarrow> (s'' = s' \<and> br = return_value v)"
+      using prems(3) 
+      apply (induction rule: converse_rtranclp_induct)
+      apply (metis instruction_state.inject(2) terminal_state_i_def converse_rtranclpE Steps.term_state_i_simps(1))
+      by (smt (verit, best) converse_rtranclpE instruction_state.distinct(1) step_i.cases)
+
+    moreover
+
+    have "\<not>execi prev b s \<rightarrow>\<^sub>i* erri"
+      using prems(3) apply (induction rule: converse_rtranclp_induct)
+      apply (metis terminal_state_i_def term_state_i_simps(1) converse_rtranclpE instruction_state.distinct(5))
+      by (smt (verit, best) converse_rtranclpE instruction_state.distinct step_i.cases)
+
+    ultimately
+
+    show ?thesis
+      using prems step_f.simps
+      by fastforce
+  qed
+  subgoal premises prems for f fu lab b prev s
+  proof -
+    have "execi prev b s \<rightarrow>\<^sub>i* erri"
+      by (metis (no_types, lifting) mono_rtranclp prems(3))
+
+    moreover
+
+    have "\<And>s' br. \<not>execi prev b s \<rightarrow>\<^sub>i* flowi s' br"
+      using prems(3) apply (induction rule: converse_rtranclp_induct)
+      apply (metis terminal_state_i_def term_state_i_simps(2) converse_rtranclpE instruction_state.distinct(5))
+      by (smt (verit, best) converse_rtranclpE instruction_state.distinct step_i.cases)
+
+    ultimately
+
+    show ?thesis
+      using prems step_f.simps
+      by fastforce
+  qed
   using step_f.cases apply fastforce
   using step_f.cases by fastforce
 
@@ -355,13 +298,16 @@ proof -
     using assms wp_impl_ok
     by blast
 
-  show ?thesis using nextstate assms converse_rtranclpE fst_conv instruction_state.sel(1,2,3) list.discI 
-      list.inject result.distinct(1) result.simps(5) snd_conv step_i.cases term_state_i_simps(1)
-    unfolding wp_gen_def wp_instrs_def
-    by (smt (verit))
+  show ?thesis
+    using nextstate assms converse_rtranclpE fst_conv instruction_state.sel list.discI Steps.step_deterministic
+      list.inject result.distinct result.simps snd_conv step_i.cases term_state_i_simps local.step_i_step_f.intros
+      result.inject(1)
+    unfolding wp_gen_def wp_instrs_def terminal_state_i_def
+    by (smt (verit, del_insts))
 qed
 
 lemma instrs_instr_intro[wp_instrs_intro]:
+  assumes "\<not>is_call i"
   assumes "wp (execute_instruction i s) (\<lambda>s'. wp_instrs (execi pre ([], is, t) s') Q)"
   shows "wp_instrs (execi pre ([], i#is, t) s) Q"
 proof -
@@ -369,10 +315,12 @@ proof -
     using assms wp_impl_ok
     by blast
 
-  show ?thesis using nextstate assms converse_rtranclpE fst_conv instruction_state.sel(1,2,3) list.discI 
-      list.inject result.distinct(1) result.simps(5) snd_conv step_i.cases term_state_i_simps(1)
-    unfolding wp_gen_def wp_instrs_def
-    by (smt (verit))
+  show ?thesis
+    using nextstate assms converse_rtranclpE fst_conv instruction_state.sel list.discI Steps.step_deterministic
+      list.inject result.distinct result.simps snd_conv step_i.cases term_state_i_simps local.step_i_step_f.intros
+      result.inject(1)
+    unfolding wp_gen_def wp_instrs_def terminal_state_i_def
+    by (smt (verit, del_insts))
 qed
 
 lemma block_ret_Some_wp_intro[wp_instrs_intro]:
@@ -389,9 +337,8 @@ lemma block_ret_Some_wp_intro[wp_instrs_intro]:
         by auto
 
         then show ?thesis using step_deterministic
-          by (smt (verit, ccfv_SIG)
-              converse_rtranclpE instruction_state.distinct(6) is_erri_def prems(2,3,4) step_i.cases
-              term_state_i_simps(1,2))
+          by (metis Steps.terminal_state_i_def converse_rtranclpE is_erri_def local.instruction_state.distinct(6)
+              local.term_state_i_simps(1) prems(2,3,4))
     qed
   done
 
@@ -408,9 +355,8 @@ lemma block_ret_None_wp_intro[wp_instrs_intro]:
         by auto
 
         then show ?thesis using step_deterministic
-          by (smt (verit, ccfv_SIG)
-              converse_rtranclpE instruction_state.distinct(6) is_erri_def prems step_i.cases
-              term_state_i_simps(1,2))
+          by (metis Steps.terminal_state_i_def converse_rtranclpE is_erri_def local.instruction_state.distinct(6)
+              local.term_state_i_simps(1) prems)
     qed
   done
 
@@ -421,9 +367,8 @@ lemma block_br_label_wp_intro[wp_instrs_intro]:
   unfolding wp_instrs_def
   using assms
   apply (intro impI allI) apply (elim conjE)
-  by (smt (verit) converse_rtranclpE instruction_state.disc instruction_state.inject list.discI
-      llvm_terminator_instruction.distinct llvm_terminator_instruction.inject prod.inject
-      result.distinct(1) result.inject(1) step_i.cases term_state_i_simps(1,2))
+  by (metis Steps.terminal_state_i_def converse_rtranclpE instruction_state.disc(8) local.step_deterministic(1)
+      local.step_i_step_f.intros(1) local.term_state_i_simps(1))
 
 lemma block_br_i1_wp_intro[wp_instrs_intro]:
   assumes "register_\<alpha> s value = Some (vi1 b)"
@@ -433,9 +378,9 @@ lemma block_br_i1_wp_intro[wp_instrs_intro]:
   unfolding wp_instrs_def
   using assms
   apply (intro impI allI) apply (elim conjE)
-  by (smt (verit) converse_rtranclpE instruction_state.disc(8) instruction_state.inject(1) list.discI
-      llvm_terminator_instruction.distinct(1,5) llvm_terminator_instruction.inject(2) llvm_value.inject(1)
-      prod.inject result.inject(1) step_i.cases term_state_i_simps(1,2) register_\<alpha>_eq_get_register)
+  by (smt (verit) Steps.terminal_state_i_def converse_rtranclpE instruction_state.collapse(3)
+      instruction_state.distinct(1) local.instruction_state.distinct(6) local.step_deterministic(1) local.step_i.cases
+      local.step_i_step_f.intros(2) register_\<alpha>_eq_get_register)
 
 
 
@@ -445,11 +390,24 @@ lemma terminal_steps_refl[simp]:
   unfolding terminal_state_f_def terminal_state_i_def
   by (auto elim: converse_rtranclpE)
 
-lemma terminal_non_err[simp]:
-  "s \<nexists>\<rightarrow>\<^sub>f \<and> \<not>is_errf s \<longleftrightarrow> is_retf s"
-  by (cases s; auto)
+
+
+
+
+
+
+
+
 
 definition "wp_func fs Q \<equiv> \<forall>fs'. fs \<rightarrow>\<^sub>f* fs' \<and> (fs' \<nexists>\<rightarrow>\<^sub>f) \<longrightarrow> (\<not>is_errf fs') \<and> (Q (state fs') (ret_value fs'))"
+
+
+
+
+
+
+
+
 
 
 type_synonym precondition  = "state \<Rightarrow> bool"
@@ -497,10 +455,12 @@ definition "annotation_holds fs \<equiv>
 definition step_until :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" where
   "step_until fs fs' \<equiv> fs \<rightarrow>\<^sub>f fs' \<and> \<not>has_annotation fs"
 
-definition annotated_step :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<Rightarrow>\<^sub>f" 50) where
+
+
+definition annotated_step_f :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<Rightarrow>\<^sub>f" 50) where
   "s \<Rightarrow>\<^sub>f s' \<equiv> (\<exists>x. s \<rightarrow>\<^sub>f x \<and> step_until\<^sup>*\<^sup>* x s') \<and> (has_annotation s' \<or> is_errf s')"
-abbreviation annotated_steps :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<Rightarrow>\<^sub>f*" 50) where
-  "fs \<Rightarrow>\<^sub>f* fs' \<equiv> annotated_step\<^sup>*\<^sup>* fs fs'"
+abbreviation annotated_steps_f :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<Rightarrow>\<^sub>f*" 50) where
+  "fs \<Rightarrow>\<^sub>f* fs' \<equiv> annotated_step_f\<^sup>*\<^sup>* fs fs'"
 
 
 
@@ -510,8 +470,8 @@ definition wp_step where
 definition wp_steps_until where
   "wp_steps_until fs Q \<equiv> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> \<not>is_errf fs \<longrightarrow> \<not>is_errf fs') \<and> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> has_annotation fs' \<longrightarrow> Q fs')"
 
-definition wp_annotated_step where
-  "wp_annotated_step fs Q \<equiv> (\<forall>fs'. fs \<Rightarrow>\<^sub>f fs' \<longrightarrow> \<not>is_errf fs' \<and> Q fs')"
+definition wp_annotated_step_f where
+  "wp_annotated_step_f fs Q \<equiv> (\<forall>fs'. fs \<Rightarrow>\<^sub>f fs' \<longrightarrow> \<not>is_errf fs' \<and> Q fs')"
 
 lemma wp_step_intro:
   assumes "map_of (funcs program) f = Some fu"
@@ -560,14 +520,28 @@ lemma wp_steps_until_intro:
 
 lemma wp_annotated_step_intro:
   assumes "wp_step fs (\<lambda>fs'. wp_steps_until fs' Q)"
-  shows "wp_annotated_step fs Q"
+  shows "wp_annotated_step_f fs Q"
   using assms converse_rtranclpE
-  unfolding wp_annotated_step_def wp_step_def annotated_step_def wp_steps_until_def
+  unfolding wp_annotated_step_f_def wp_step_def annotated_step_f_def wp_steps_until_def
   by blast
 
 
 
-definition "floyd_cond s p l f \<equiv> wp_annotated_step (branchf s p l f) (\<lambda>fs'. annotation_holds fs')"
+
+lemma instrs_call_intro[wp_instrs_intro]:
+  assumes "map_of (funcs program) f = Some fu"
+  assumes "first_label fu = Some b"
+  assumes "map_of annotations f = Some (pres, post)"
+  assumes "map_of pres (None, b) = Some precond"
+  assumes "precond (push_frame s)"
+  assumes "\<And>s' v'. post s' v' \<Longrightarrow> wp_instrs (execi pre ([], is, t) (pop_frame s s')) Q"
+  shows "wp_instrs (execi pre ([], (call n ty f p)#is, t) s) Q"
+proof -
+  show ?thesis sorry
+qed
+
+
+definition "floyd_cond s p l f \<equiv> wp_annotated_step_f (branchf s p l f) (\<lambda>fs'. annotation_holds fs')"
 
 
 definition floyd_vc :: "bool" where
@@ -698,17 +672,17 @@ lemma floyd_vc_impl_annotation_holds:
     case (branchf s p l f)
     then show ?thesis
       using assms prems
-      unfolding floyd_vc_def floyd_cond_def wp_annotated_step_def annotation_holds_def
+      unfolding floyd_vc_def floyd_cond_def wp_annotated_step_f_def annotation_holds_def
       by (smt (verit, ccfv_SIG) case_optionE case_prodE case_prod_conv function_state.simps(9) option.simps(4,5))
   next
     case (retf x21 x22 x23)
     then show ?thesis
-      using annotated_step_def local.term_state_f_simps local.terminal_state_f_def prems
+      using annotated_step_f_def local.term_state_f_simps local.terminal_state_f_def prems
       by blast
   next
     case errf
     then show ?thesis 
-      using annotated_step_def local.term_state_f_simps local.terminal_state_f_def prems
+      using annotated_step_f_def local.term_state_f_simps local.terminal_state_f_def prems
       by force 
   qed
   done
@@ -722,9 +696,9 @@ lemma floyd_vc_impl_annotated_steps_hold:
   by (induction rule: converse_rtranclp_induct; blast)
 
 lemma exists_first_cutpoint:
-  assumes "fs \<rightarrow>\<^sub>f^n fs'"
+  assumes "fs (\<rightarrow>\<^sub>f)^n fs'"
   assumes "is_errf fs' \<or> has_annotation fs'"
-  shows "\<exists>fsp m. step_until\<^sup>*\<^sup>* fs fsp \<and> (is_errf fsp \<or> has_annotation fsp) \<and> fsp \<rightarrow>\<^sub>f^m fs' \<and> m \<le> n"
+  shows "\<exists>fsp m. step_until\<^sup>*\<^sup>* fs fsp \<and> (is_errf fsp \<or> has_annotation fsp) \<and> fsp (\<rightarrow>\<^sub>f)^m fs' \<and> m \<le> n"
   using assms
   proof (induction n arbitrary: fs)
     case 0
@@ -735,7 +709,7 @@ lemma exists_first_cutpoint:
     case (Suc n)
   
     then show ?case
-      by (smt (verit, ccfv_threshold) n_steps_f.elims(1) nat.inject nat_le_linear not_less_eq_eq
+      by (smt (verit, ccfv_threshold) n_steps.elims(1) nat.inject nat_le_linear not_less_eq_eq
           r_into_rtranclp rtranclp.rtrancl_refl rtranclp_trans step_until_def)
   qed
 
@@ -745,7 +719,7 @@ lemma steps_to_annotation_impl_annotated_steps:
   assumes annot: "has_annotation fs' \<or> is_errf fs'"
   shows "fs \<Rightarrow>\<^sub>f* fs'"
 proof -
-  obtain n where ndef: "fs \<rightarrow>\<^sub>f^n fs'" using path steps_f_exists_n_steps by blast
+  obtain n where ndef: "fs (\<rightarrow>\<^sub>f)^n fs'" using path closure_steps_exists_n_steps by fast
   
   then show ?thesis
   proof (induction n arbitrary: fs rule: less_induct)
@@ -758,17 +732,17 @@ proof -
         using less by fastforce
       next
         case (Suc n')
-        then obtain fs1 where fs1def1: "fs \<rightarrow>\<^sub>f fs1" and fs1def: "fs1 \<rightarrow>\<^sub>f^n' fs'"
+        then obtain fs1 where fs1def1: "fs \<rightarrow>\<^sub>f fs1" and fs1def: "fs1 (\<rightarrow>\<^sub>f)^n' fs'"
           using less ndef
           by auto
 
-        obtain fsa m where "step_until\<^sup>*\<^sup>* fs1 fsa" "has_annotation fsa \<or> is_errf fsa" "fsa \<rightarrow>\<^sub>f^m fs'" "m \<le> n'"
+        obtain fsa m where "step_until\<^sup>*\<^sup>* fs1 fsa" "has_annotation fsa \<or> is_errf fsa" "fsa (\<rightarrow>\<^sub>f)^m fs'" "m \<le> n'"
           using fs1def exists_first_cutpoint annot
           by blast
 
-      then have "fs \<Rightarrow>\<^sub>f fsa" using fs1def1 unfolding annotated_step_def by blast
+      then have "fs \<Rightarrow>\<^sub>f fsa" using fs1def1 unfolding annotated_step_f_def by blast
 
-      also from less.IH[OF _ \<open>fsa \<rightarrow>\<^sub>f^m fs'\<close>] \<open>m \<le> n'\<close> Suc annot have "fsa \<Rightarrow>\<^sub>f* fs'" by force
+      also from less.IH[OF _ \<open>fsa (\<rightarrow>\<^sub>f)^m fs'\<close>] \<open>m \<le> n'\<close> Suc annot have "fsa \<Rightarrow>\<^sub>f* fs'" by force
       
       finally show ?thesis .
       qed
@@ -816,7 +790,7 @@ lemma floyd_vc_impl_wp_step:
   subgoal premises prems for fs'
   proof -
     have "has_annotation fs'"
-      unfolding has_annotation_def
+      unfolding has_annotation_def 
       by (smt (verit, ccfv_SIG) Steps.terminal_non_err annotation_holds_def assms(1,5) floyd_vc_def
           floyd_vc_impl_annotated_steps_hold function_state.case_eq_if function_state.disc(2) function_state.sel(7)
           function_state.simps(11) function_state.split_sel_asm is_errf_def le_boolD local.step_f.cases
@@ -833,7 +807,7 @@ lemma floyd_vc_impl_wp_step:
       using prems
       unfolding annotation_holds_def
       apply (cases fs')
-        apply force defer apply force apply (erule conjE)
+      defer defer apply force defer apply (erule conjE)
       subgoal premises prems' for s v f'
       proof -
         have "f = f'" using prems' function_steps_keep_function assms function_state.simps
@@ -843,6 +817,7 @@ lemma floyd_vc_impl_wp_step:
           using assms prems'
           by force
       qed
+      
       done
   qed
   done

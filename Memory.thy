@@ -265,19 +265,19 @@ lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
   "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some mem_unset) \<and> single_memory_\<alpha> s a = None)"
   unfolding allocate_single_memory_def
   apply (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
-  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
-  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
 lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
-  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
 
 
@@ -285,6 +285,28 @@ section "Stack Frames"
 
 definition "mem_op_well_behaved f \<equiv> \<forall>s a. ((memory_\<alpha> s a \<noteq> None \<longrightarrow> memory_\<alpha> (f s) a \<noteq> None) \<and> (memory_\<alpha> s a = Some mem_freed \<longrightarrow> memory_\<alpha> (f s) a = Some mem_freed))"
 
+lemma well_behaved_imp_stack_grows:
+  assumes "mem_op_well_behaved f" "(l',g',s',h') = f (l,g,s,h)"
+  shows "length s' \<ge> length s"
+  unfolding mem_op_well_behaved_def
+proof -
+  have "\<And>l g s h a. memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> None \<Longrightarrow> a < length s"
+    apply simp
+    unfolding single_memory_\<alpha>_def allocated_single_memory_address_def
+    by (auto split: if_splits)        
+
+  moreover
+
+  have "\<And>a. memory_\<alpha> (l,g,s,h) a \<noteq> None \<Longrightarrow> memory_\<alpha> (l',g',s',h') a \<noteq> None"
+    using assms mem_op_well_behaved_def
+    by simp
+
+  ultimately
+  
+  show ?thesis
+    by (metis allocated_single_memory_address_def memory_\<alpha>.simps(1) nat_le_linear nat_less_le
+        single_memory_\<alpha>_not_none_iff)
+qed
 
 
 lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s''' (haddr a) = memory_\<alpha> s'' (haddr a)"
@@ -292,8 +314,67 @@ lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_w
 
 lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s (saddr a) = None \<longrightarrow> memory_\<alpha> s''' (saddr a) = None"
   apply (cases s; cases s'; cases s''; cases s''')
-  apply simp
+  subgoal premises prems for l g st h l' g' st' h' l'' g'' st'' h'' l''' g''' st''' h'''
+  proof -
+    obtain n n' n'' n''' where "n = length st" "n' = length st'" "n'' = length st''" "n''' = length st'''"
+      by blast
 
+    have "n''' = length (take n st'')"
+      using \<open>n = length st\<close> \<open>n''' = length st'''\<close> prems(4,5,7,8)
+      by fastforce
+
+    have "n' = n"
+      using \<open>n = length st\<close> \<open>n' = length st'\<close> prems(1,5,6)
+      by auto
+
+    have "n'' \<ge> n"
+      using \<open>n' = length st'\<close> \<open>n' = n\<close> \<open>n'' = length st''\<close> prems(2,3,6,7) well_behaved_imp_stack_grows
+      by auto
+
+    have "n = n'''" 
+      using \<open>n \<le> n''\<close> \<open>n'' = length st''\<close> \<open>n''' = length (take n st'')\<close>
+      by force
+
+    show ?thesis using \<open>n = n'''\<close> \<open>n = length st\<close> \<open>n''' = length st'''\<close>
+      by (simp add: single_memory_\<alpha>_def allocated_single_memory_address_def prems(5,8))
+  qed
+  done
+
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s (saddr a) \<noteq> None \<longrightarrow> memory_\<alpha> s''' (saddr a) \<noteq> None"
+  apply (cases s; cases s'; cases s''; cases s''')
+  subgoal premises prems for l g st h l' g' st' h' l'' g'' st'' h'' l''' g''' st''' h'''
+  proof -
+    obtain n n' n'' n''' where "n = length st" "n' = length st'" "n'' = length st''" "n''' = length st'''"
+      by blast
+
+    have "n''' = length (take n st'')"
+      using \<open>n = length st\<close> \<open>n''' = length st'''\<close> prems(4,5,7,8)
+      by fastforce
+
+    have "n' = n"
+      using \<open>n = length st\<close> \<open>n' = length st'\<close> prems(1,5,6)
+      by auto
+
+    have "n'' \<ge> n"
+      using \<open>n' = length st'\<close> \<open>n' = n\<close> \<open>n'' = length st''\<close> prems(2,3,6,7) well_behaved_imp_stack_grows
+      by auto
+
+    have "n = n'''" 
+      using \<open>n \<le> n''\<close> \<open>n'' = length st''\<close> \<open>n''' = length (take n st'')\<close>
+      by force
+
+    show ?thesis using \<open>n = n'''\<close> \<open>n = length st\<close> \<open>n''' = length st'''\<close>
+      by (simp add: single_memory_\<alpha>_def allocated_single_memory_address_def prems(5,8))
+  qed
+  done
+
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (lid n)) = register_\<alpha> s (reg (lid n))"
+  apply (cases s; cases s'')
+  by force
+
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (gid n)) = register_\<alpha> s'' (reg (gid n))"
+  apply (cases s; cases s'')
+  by force
 
 
 
