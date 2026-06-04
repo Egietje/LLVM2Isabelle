@@ -463,5 +463,22 @@ qed
 35 }
 *)
 
+definition caller_func :: "llvm_function" where
+  "caller_func \<equiv> func i32 [
+    (lid ''entry'', ([], [
+      call (Some (lid ''a'')) i32 (gid ''callee'') []
+    ], ret (Some (i32, val (vi32 0)))))
+  ]"
+definition callee_func :: "llvm_function" where
+  "callee_func \<equiv> func i32 [
+    (lid ''entry'', ([], [], ret (Some (i32, val (vi32 0)))))
+  ]"
+
+definition call_prog :: "llvm_program" where
+  "call_prog \<equiv> program [
+    (gid ''caller'', caller_func),
+    (gid ''callee'', callee_func)
+  ]"
+
 
 end

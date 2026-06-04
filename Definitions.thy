@@ -40,7 +40,7 @@ datatype llvm_instruction = alloca llvm_identifier llvm_type "llvm_align option"
                           | load llvm_identifier llvm_type llvm_pointer "llvm_align option"
                           | add llvm_identifier llvm_add_wrap llvm_type llvm_value_ref llvm_value_ref
                           | icmp llvm_identifier llvm_same_sign llvm_compare_condition llvm_type llvm_value_ref llvm_value_ref
-                          | call "llvm_identifier option" llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
+                          | is_call: call "llvm_identifier option" llvm_type llvm_identifier "(llvm_type * llvm_value_ref) list"
 
 datatype llvm_terminator_instruction = ret "(llvm_type * llvm_value_ref) option"
                                      | br_i1 llvm_value_ref llvm_identifier llvm_identifier

@@ -23,7 +23,7 @@ definition execute_alloca :: "llvm_identifier \<Rightarrow> state \<Rightarrow> 
     }"
 
 lemma alloca_wp_intro[THEN consequence, wp_intro]:
-  "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr a)) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some None) \<and> memory_\<alpha> s a = None))"
+  "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr a)) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None))"
   unfolding execute_alloca_def
   by (intro wp_intro; auto)
 
@@ -51,13 +51,13 @@ definition execute_store :: "llvm_value_ref \<Rightarrow> llvm_pointer \<Rightar
   }"
 
 lemma store_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a \<noteq> None"
+  assumes "register_\<alpha> s pointer = Some (addr a)" "valid_memory_address s a"
   assumes "register_\<alpha> s value = Some v"
-  shows "wp (execute_store value pointer s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (Some v)) \<and> register_\<alpha> s' = register_\<alpha> s)"
+  shows "wp (execute_store value pointer s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (mem_val v)) \<and> register_\<alpha> s' = register_\<alpha> s)"
   unfolding execute_store_def
   using assms
   apply simp
-  by (intro wp_intro; auto)
+  apply (intro wp_intro) by auto
 
 
 definition execute_load :: "llvm_identifier \<Rightarrow> llvm_pointer \<Rightarrow> state \<Rightarrow> state result" where
@@ -68,7 +68,7 @@ definition execute_load :: "llvm_identifier \<Rightarrow> llvm_pointer \<Rightar
   }"
 
 lemma load_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a = Some (Some v)"
+  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a = Some (mem_val v)"
   shows "wp (execute_load name pointer s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v))"
   unfolding execute_load_def
   using assms
@@ -238,6 +238,7 @@ fun execute_instruction :: "llvm_instruction \<Rightarrow> state \<Rightarrow> s
 | "execute_instruction (add name wrap type v1 v2) s = execute_add name wrap v1 v2 s"
   (* Get values, do comparison, and store in register. *)
 | "execute_instruction (icmp name same_sign cond type v1 v2) s = execute_icmp name same_sign cond v1 v2 s"
+| "execute_instruction (call name type fun params) s = err internal_error"
 
 lemma [wp_intro]: "wp (execute_alloca name s) Q \<Longrightarrow> wp (execute_instruction (alloca name type align) s) Q"
   by simp

@@ -11,6 +11,7 @@ datatype error = unknown_register_name
   | invalid_address
   | not_an_address | incompatible_types | unknown_label
   | phi_no_previous_block | phi_label_not_found | phi_label_not_distinct
+  | internal_error
 
 datatype 'a result = ok 'a | err error
 
@@ -90,6 +91,14 @@ lemma result_return_ok_iff[simp]: "return x = ok y \<longleftrightarrow> x = y"
 
 lemma result_let_in[simp]: "do { z \<leftarrow> (let x = y in (f x :: 'a result)); g z} = (let x = y in (do {z \<leftarrow> f x; g z }))"
   by simp
+
+lemma wp_impl_ok[simp]:
+  assumes "wp x Q"
+  shows "\<exists>v. x = ok v"
+  using assms
+  unfolding wp_gen_def
+  by (cases x; simp)
+
 
 end
 
