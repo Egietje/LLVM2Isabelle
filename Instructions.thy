@@ -19,34 +19,29 @@ section "Memory instructions"
 definition execute_alloca :: "llvm_identifier \<Rightarrow> state \<Rightarrow> state result" where
   "execute_alloca name s = do {
       (s', a) \<leftarrow> return (allocate_stack s);
-      return (set_register name (addr a) s')
+      set_register name (addr a) s'
     }"
 
 lemma alloca_wp_intro[THEN consequence, wp_intro]:
-  "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr a)) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None))"
+  assumes "is_lid name"
+  shows "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr a)) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None))"
+  using assms
   unfolding execute_alloca_def
   by (intro wp_intro; auto)
 
-thm alloca_wp_intro
-
-lemma cons_ex:
-  assumes "wp c (\<lambda>s. \<exists>x. P x s)"
-  assumes "\<And>s x. P x s \<Longrightarrow> Q s"
-  shows "wp c Q"
-  oops
   
 
 
 fun get_address_from_pointer :: "state \<Rightarrow> llvm_pointer \<Rightarrow> llvm_address result" where
   "get_address_from_pointer s p = do {
-    a \<leftarrow> get_register s p;
+    a \<leftarrow> dereference s p;
     (case a of (addr a') \<Rightarrow> ok a' | _ \<Rightarrow> err not_an_address)
   }"
 
 definition execute_store :: "llvm_value_ref \<Rightarrow> llvm_pointer \<Rightarrow> state \<Rightarrow> state result" where
   "execute_store v p s = do {
     address \<leftarrow> get_address_from_pointer s p;
-    value \<leftarrow> get_register s v;
+    value \<leftarrow> dereference s v;
     set_memory address value s
   }"
 
@@ -64,11 +59,11 @@ definition execute_load :: "llvm_identifier \<Rightarrow> llvm_pointer \<Rightar
   "execute_load n p s = do {
     a \<leftarrow> get_address_from_pointer s p;
     v \<leftarrow> get_memory s a;
-    return (set_register n v s)
+    set_register n v s
   }"
 
 lemma load_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a = Some (mem_val v)"
+  assumes "register_\<alpha> s pointer = Some (addr a)" "memory_\<alpha> s a = Some (mem_val v)" "is_lid name"
   shows "wp (execute_load name pointer s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v))"
   unfolding execute_load_def
   using assms
@@ -135,22 +130,22 @@ fun add_values :: "llvm_add_wrap \<Rightarrow> llvm_value \<Rightarrow> llvm_val
 
 definition execute_add :: "llvm_identifier \<Rightarrow> llvm_add_wrap \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
   "execute_add name wrap v1 v2 s = do {
-    v1' \<leftarrow> get_register s v1;
-    v2' \<leftarrow> get_register s v2;
+    v1' \<leftarrow> dereference s v1;
+    v2' \<leftarrow> dereference s v2;
     res \<leftarrow> add_values wrap v1' v2';
-    return (set_register name res s)
+    set_register name res s
   }"
 
 
 lemma add32_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "add_no_poison32 wrap v1' v2'"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "add_no_poison32 wrap v1' v2'" "is_lid name"
   shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi32 (v1' + v2'))))"
   using assms
   unfolding execute_add_def
   by (intro wp_intro; simp; auto; intro wp_intro; simp)
 
 lemma add64_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "add_no_poison64 wrap v1' v2'"
+  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "add_no_poison64 wrap v1' v2'" "is_lid name"
   shows "wp (execute_add name wrap v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (vi64 (v1' + v2'))))"
   using assms
   unfolding execute_add_def
@@ -203,21 +198,21 @@ fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition 
 
 definition execute_icmp :: "llvm_identifier \<Rightarrow> llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value_ref \<Rightarrow> llvm_value_ref \<Rightarrow> state \<Rightarrow> state result" where
   "execute_icmp name same_sign cond v1 v2 s = do {
-    v1' \<leftarrow> get_register s v1;
-    v2' \<leftarrow> get_register s v2;
+    v1' \<leftarrow> dereference s v1;
+    v2' \<leftarrow> dereference s v2;
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
-    return (set_register name res s)
+    set_register name res s
   }"
 
 lemma icmp32_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs32 v1' v2' else True)"
+  assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs32 v1' v2' else True)" "is_lid name"
   shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_32 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def
   by (cases ss; intro wp_intro; auto; intro wp_intro; auto)
 
 lemma icmp64_wp_intro[THEN consequence, wp_intro]:
-  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "(if ss then same_signs64 v1' v2' else True)"
+  assumes "register_\<alpha> s v1 = Some (vi64 v1')" "register_\<alpha> s v2 = Some (vi64 v2')" "(if ss then same_signs64 v1' v2' else True)" "is_lid name"
   shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_64 cond v1' v2')))"
   using assms
   unfolding execute_icmp_def
@@ -264,14 +259,14 @@ fun phi_lookup :: "llvm_identifier option \<Rightarrow> (llvm_identifier * llvm_
 definition execute_phi :: "llvm_identifier option \<Rightarrow> llvm_phi_node \<Rightarrow> state \<Rightarrow> state result" where
   "execute_phi prev p s = (case p of phi name type values \<Rightarrow> do {
     v \<leftarrow> phi_lookup prev values;
-    v' \<leftarrow> get_register s v;
-    return (set_register name v' s)
+    v' \<leftarrow> dereference s v;
+    set_register name v' s
   })"
 
 lemma phi_wp_intro[THEN consequence, wp_intro]:
   assumes "p = phi name t values"
   assumes "distinct (map fst values)"
-  assumes "pre = Some pre'" "map_of values pre' = Some v" "register_\<alpha> s v = Some v'"
+  assumes "pre = Some pre'" "map_of values pre' = Some v" "register_\<alpha> s v = Some v'" "is_lid name"
   shows "wp (execute_phi pre p s) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s)"
   unfolding execute_phi_def
   using assms
@@ -288,13 +283,13 @@ fun execute_block :: "llvm_identifier option \<Rightarrow> llvm_instruction_bloc
     execute_block previous ([], is, t) s'
   }"
 | "execute_block previous (_, _, br_i1 v l1 l2) s = do {
-    val \<leftarrow> get_register s v;
+    val \<leftarrow> dereference s v;
     label \<leftarrow> (case val of (vi1 b) \<Rightarrow> ok (if b then l1 else l2) | _ \<Rightarrow> err incompatible_types);
     return (s, branch_label label)
   }"
 | "execute_block previous (_, _, br_label l) s = return (s, branch_label l)"
 | "execute_block previous (_, _, ret (Some (t, v))) s = do {
-    res \<leftarrow> get_register s v;
+    res \<leftarrow> dereference s v;
     return (s, return_value (Some res))
   }"
 | "execute_block previous (_, _, ret None) s = do {

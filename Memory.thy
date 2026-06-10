@@ -4,7 +4,7 @@ begin
 
 section "Simps"
 
-lemma register_\<alpha>_eq[simp]: "register_\<alpha> (l,g,s,h) = register_\<alpha> (l,g,s',h')"
+lemma register_\<alpha>_eq[simp]: "register_\<alpha> (lr,gr,sm,hm,gm) = register_\<alpha> (lr,gr,sm',hm',gm')"
   apply (rule ext)
   subgoal for x
     apply (cases x; simp)
@@ -18,29 +18,39 @@ named_theorems single_memory_simps
 named_theorems single_memory_intro
 
 lemma single_memory_\<alpha>_set[single_memory_simps]:
-  assumes "single_memory_\<alpha> s a \<noteq> None \<and> single_memory_\<alpha> s a \<noteq> Some mem_freed"
+  assumes "valid_single_memory_address s a"
   shows "single_memory_\<alpha> (s[a := mem_val v]) = (single_memory_\<alpha> s)(a := Some (mem_val v))"
   using assms
-  unfolding single_memory_\<alpha>_def allocated_single_memory_address_def
+  unfolding single_memory_\<alpha>_def allocated_single_memory_address_def valid_single_memory_address_def
   by (auto split: if_splits)
 
-lemma memory_\<alpha>_set_heap[simp]:
-  assumes "memory_\<alpha> (l,g,s,h) (haddr a) \<noteq> None \<and> memory_\<alpha> (l,g,s,h) (haddr a) \<noteq> Some mem_freed"
-  shows "memory_\<alpha> (l,g,s,h[a := mem_val v]) = ((memory_\<alpha> (l,g,s,h))((haddr a) := Some (mem_val v)))"
+lemma memory_\<alpha>_set_stack[simp]:
+  assumes "valid_memory_address (lr,gr,sm,hm,gm) (saddr a)"
+  shows "memory_\<alpha> (lr,gr,sm[a := mem_val v],hm,gm) = ((memory_\<alpha> (lr,gr,sm,hm,gm))((saddr a) := Some (mem_val v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
   by (cases a'; fastforce)
   done
 
-lemma memory_\<alpha>_set_stack[simp]:
-  assumes "memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> None \<and> memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> Some mem_freed"
-  shows "memory_\<alpha> (l,g,s[a := mem_val v],h) = ((memory_\<alpha> (l,g,s,h))((saddr a) := Some (mem_val v)))"
+lemma memory_\<alpha>_set_heap[simp]:
+  assumes "valid_memory_address (lr,gr,sm,hm,gm) (haddr a)"
+  shows "memory_\<alpha> (lr,gr,sm,hm[a := mem_val v],gm) = ((memory_\<alpha> (lr,gr,sm,hm,gm))((haddr a) := Some (mem_val v)))"
   apply (rule ext)
   subgoal for a'
   using assms single_memory_simps
   by (cases a'; fastforce)
   done
+
+lemma memory_\<alpha>_set_global[simp]:
+  assumes "valid_memory_address (lr,gr,sm,hm,gm) (gaddr a)"
+  shows "memory_\<alpha> (lr,gr,sm,hm,gm[a := mem_val v]) = ((memory_\<alpha> (lr,gr,sm,hm,gm))((gaddr a) := Some (mem_val v)))"
+  apply (rule ext)
+  subgoal for a'
+  using assms single_memory_simps
+  by (cases a'; fastforce)
+  done
+
 
 lemma single_memory_\<alpha>_allocate[single_memory_simps]:
   assumes "a \<noteq> length m"
@@ -49,30 +59,42 @@ lemma single_memory_\<alpha>_allocate[single_memory_simps]:
   using assms
   by (auto simp: nth_append)
 
+
 lemma single_memory_\<alpha>_allocated[single_memory_simps]:
   "single_memory_\<alpha> (m@[mem_unset]) (length m) = Some mem_unset"
   unfolding single_memory_\<alpha>_def allocated_single_memory_address_def
   by simp
 
-lemma memory_\<alpha>_allocate_heap_eq:
-  assumes "a \<noteq> (haddr (length h))"
-  shows "memory_\<alpha> (l,g,s,h@[mem_unset]) a = memory_\<alpha> (l,g,s,h) a"
-  using assms
-  by (cases a; simp add: single_memory_simps)
-
 lemma memory_\<alpha>_allocate_stack_eq:
-  assumes "a \<noteq> (saddr (length s))"
-  shows "memory_\<alpha> (l,g,s@[mem_unset],h) a = memory_\<alpha> (l,g,s,h) a"
+  assumes "a \<noteq> (saddr (length sm))"
+  shows "memory_\<alpha> (lr,gr,sm@[mem_unset],hm,gm) a = memory_\<alpha> (lr,gr,sm,hm,gm) a"
   using assms
   by (cases a; simp add: single_memory_simps)
 
-lemma memory_\<alpha>_allocate_heap[simp]:
-  "memory_\<alpha> (l, g, s, h @ [mem_unset]) = (memory_\<alpha> (l, g, s, h))(haddr (length h) := Some mem_unset)"
-  by (auto simp: memory_\<alpha>_allocate_heap_eq single_memory_simps)
+lemma memory_\<alpha>_allocate_heap_eq:
+  assumes "a \<noteq> (haddr (length hm))"
+  shows "memory_\<alpha> (lr,gr,sm,hm@[mem_unset],gm) a = memory_\<alpha> (lr,gr,sm,hm,gm) a"
+  using assms
+  by (cases a; simp add: single_memory_simps)
+
+lemma memory_\<alpha>_allocate_global_eq:
+  assumes "a \<noteq> (gaddr (length gm))"
+  shows "memory_\<alpha> (lr,gr,sm,hm,gm@[mem_unset]) a = memory_\<alpha> (lr,gr,sm,hm,gm) a"
+  using assms
+  by (cases a; simp add: single_memory_simps)
+
 
 lemma memory_\<alpha>_allocate_stack[simp]:
-  "memory_\<alpha> (l, g, s @ [mem_unset], h) = (memory_\<alpha> (l, g, s, h))(saddr (length s) := Some mem_unset)"
+  "memory_\<alpha> (lr,gr,sm@[mem_unset],hm,gm) = (memory_\<alpha> (lr,gr,sm,hm,gm))(saddr (length sm) := Some mem_unset)"
   by (auto simp: memory_\<alpha>_allocate_stack_eq single_memory_simps)
+
+lemma memory_\<alpha>_allocate_heap[simp]:
+  "memory_\<alpha> (lr,gr,sm,hm@[mem_unset],gm) = (memory_\<alpha> (lr,gr,sm,hm,gm))(haddr (length hm) := Some mem_unset)"
+  by (auto simp: memory_\<alpha>_allocate_heap_eq single_memory_simps)
+
+lemma memory_\<alpha>_allocate_global[simp]:
+  "memory_\<alpha> (lr,gr,sm,hm,gm@[mem_unset]) = (memory_\<alpha> (lr,gr,sm,hm,gm))(gaddr (length gm) := Some mem_unset)"
+  by (auto simp: memory_\<alpha>_allocate_global_eq single_memory_simps)
 
 
 lemma single_memory_\<alpha>_free[single_memory_simps]:
@@ -82,23 +104,16 @@ lemma single_memory_\<alpha>_free[single_memory_simps]:
   unfolding single_memory_\<alpha>_def allocated_single_memory_address_def
   by (auto split: if_splits)
 
+
 lemma memory_\<alpha>_free_heap[simp]:
-  assumes "allocated_memory_address (l,g,s,h) (haddr a)"
-  shows "memory_\<alpha> (l,g,s,h[a := mem_freed]) = (memory_\<alpha> (l,g,s,h))(haddr a := Some mem_freed)"
+  assumes "allocated_memory_address (lr,gr,sm,hm,gm) (haddr a)"
+  shows "memory_\<alpha> (lr,gr,sm,hm[a := mem_freed],gm) = (memory_\<alpha> (lr,gr,sm,hm,gm))(haddr a := Some mem_freed)"
   apply (rule ext)
   subgoal for a'
     using assms
     by (cases a'; simp add: single_memory_simps)
   done
 
-lemma memory_\<alpha>_free_stack[simp]:
-  assumes "allocated_memory_address (l,g,s,h) (saddr a)"
-  shows "memory_\<alpha> (l,g,s[a := mem_freed],h) = (memory_\<alpha> (l,g,s,h))(saddr a := Some mem_freed)"
-  apply (rule ext)
-  subgoal for a'
-    using assms
-    by (cases a'; simp add: single_memory_simps)
-  done
 
 lemma single_memory_\<alpha>_not_none_iff[single_memory_simps]:
   "allocated_single_memory_address s a \<longleftrightarrow> single_memory_\<alpha> s a \<noteq> None"
@@ -116,9 +131,10 @@ lemma valid_address_iff[simp]:
 
 lemma memory_\<alpha>_allocate_validity:
   assumes "memory_\<alpha> m' = (memory_\<alpha> m)(a := Some mem_unset)"
-  shows "allocated_memory_address m' = (allocated_memory_address m)(a := True)"
+  shows "allocated_memory_address m' = (allocated_memory_address m)(a := True)" "valid_memory_address m' = (valid_memory_address m)(a := True)"
   using assms
   by (auto simp: fun_eq_iff)
+  
 
 
 lemma memory_\<alpha>_set_validity:
@@ -189,11 +205,17 @@ lemma allocate_heap_\<alpha>:
   using assms
   by (cases s; cases s'; cases a; auto simp: allocate_heap_def allocate_single_memory_def)
 
-lemma free_memory_\<alpha>:
-  assumes "valid_memory_address s a"
-  shows "\<exists>s'. free_memory a s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_freed)"
+lemma allocate_global_\<alpha>:
+  assumes "allocate_global s = (s', a)"
+  shows "memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_unset)"
   using assms
-  by (cases s; cases a; auto simp: single_memory_\<alpha>_def free_single_memory_def valid_single_memory_address_def split: if_splits)
+  by (cases s; cases s'; cases a; auto simp: allocate_global_def allocate_single_memory_def)
+
+lemma free_memory_\<alpha>:
+  assumes "valid_memory_address s (haddr a)"
+  shows "\<exists>s'. free_memory (haddr a) s = ok s' \<and> memory_\<alpha> s' = (memory_\<alpha> s)((haddr a) := Some mem_freed)"
+  using assms
+  by (cases s; auto simp: single_memory_\<alpha>_def free_single_memory_def valid_single_memory_address_def split: if_splits)
 
 
 
@@ -246,15 +268,11 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
   by (auto simp: single_memory_\<alpha>_free valid_single_memory_address_def)
 
 lemma wp_free_memory_intro[THEN consequence, wp_intro]:
-  assumes "valid_memory_address s a"
-  shows "wp (free_memory a s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_freed) \<and> register_\<alpha> s = register_\<alpha> s')"
-  apply (cases a; cases s; simp)
+  assumes "valid_memory_address s (haddr a)"
+  shows "wp (free_memory (haddr a) s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)((haddr a) := Some mem_freed) \<and> register_\<alpha> s = register_\<alpha> s')"
+  apply (cases s; simp)
   using assms
-  apply (intro wp_intro single_memory_intro wp_return_intro, auto) using assms 
-  using assms valid_memory_address.simps(2) apply blast
-   apply (rule ext)
-  subgoal for _ _ _ _ _ _ _ a' by (cases a'; simp)
-  apply (intro wp_intro single_memory_intro wp_return_intro, auto) using assms 
+   apply (intro wp_intro single_memory_intro wp_return_intro, auto)
   using assms valid_memory_address.simps apply blast
    apply (rule ext)
   subgoal for _ _ _ _ _ _ _ a' by (cases a'; simp)
@@ -267,15 +285,22 @@ lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
   apply (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
+
+lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
+  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  unfolding allocate_stack_def allocate_single_memory_def
+  apply (cases s; intro wp_intro wp_return_intro; auto)
+  by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
+
 lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
   "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
-lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
-  "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
-  unfolding allocate_stack_def allocate_single_memory_def
+lemma wp_allocate_global_intro[THEN consequence, wp_intro]:
+  "wp (return (allocate_global s)) (\<lambda>(s', a). (\<exists>a'. a = gaddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
+  unfolding allocate_global_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
@@ -286,18 +311,18 @@ section "Stack Frames"
 definition "mem_op_well_behaved f \<equiv> \<forall>s a. ((memory_\<alpha> s a \<noteq> None \<longrightarrow> memory_\<alpha> (f s) a \<noteq> None) \<and> (memory_\<alpha> s a = Some mem_freed \<longrightarrow> memory_\<alpha> (f s) a = Some mem_freed))"
 
 lemma well_behaved_imp_stack_grows:
-  assumes "mem_op_well_behaved f" "(l',g',s',h') = f (l,g,s,h)"
-  shows "length s' \<ge> length s"
+  assumes "mem_op_well_behaved f" "(lr',gr',sm',hm',gm') = f (lr,gr,sm,hm,gm)"
+  shows "length sm' \<ge> length sm"
   unfolding mem_op_well_behaved_def
 proof -
-  have "\<And>l g s h a. memory_\<alpha> (l,g,s,h) (saddr a) \<noteq> None \<Longrightarrow> a < length s"
+  have "\<And>lr gr sm hm gm a. memory_\<alpha> (lr,gr,sm,hm,gm) (saddr a) \<noteq> None \<Longrightarrow> a < length sm"
     apply simp
     unfolding single_memory_\<alpha>_def allocated_single_memory_address_def
     by (auto split: if_splits)        
 
   moreover
 
-  have "\<And>a. memory_\<alpha> (l,g,s,h) a \<noteq> None \<Longrightarrow> memory_\<alpha> (l',g',s',h') a \<noteq> None"
+  have "\<And>a. memory_\<alpha> (lr,gr,sm,hm,gm) a \<noteq> None \<Longrightarrow> memory_\<alpha> (lr',gr',sm',hm',gm') a \<noteq> None"
     using assms mem_op_well_behaved_def
     by simp
 
@@ -311,70 +336,42 @@ qed
 
 lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s''' (haddr a) = memory_\<alpha> s'' (haddr a)"
   by (cases s; cases s'; cases s''; cases s'''; fastforce)
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s''' (gaddr a) = memory_\<alpha> s'' (gaddr a)"
+  by (cases s; cases s'; cases s''; cases s'''; fastforce)
 
-lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s (saddr a) = None \<longrightarrow> memory_\<alpha> s''' (saddr a) = None"
+lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s (saddr a) \<noteq> None \<longleftrightarrow> memory_\<alpha> s''' (saddr a) \<noteq> None"
   apply (cases s; cases s'; cases s''; cases s''')
-  subgoal premises prems for l g st h l' g' st' h' l'' g'' st'' h'' l''' g''' st''' h'''
+  subgoal premises prems for lr gr sm hm gm lr' gr' sm' hm' gm' lr'' gr'' sm'' hm'' gm'' lr''' gr''' sm''' hm''' gm'''
   proof -
-    obtain n n' n'' n''' where "n = length st" "n' = length st'" "n'' = length st''" "n''' = length st'''"
+    obtain n n' n'' n''' where "n = length sm" "n' = length sm'" "n'' = length sm''" "n''' = length sm'''"
       by blast
 
-    have "n''' = length (take n st'')"
-      using \<open>n = length st\<close> \<open>n''' = length st'''\<close> prems(4,5,7,8)
+    have "n''' = length (take n sm'')"
+      using \<open>n = length sm\<close> \<open>n''' = length sm'''\<close> prems(4,5,7,8)
       by fastforce
 
     have "n' = n"
-      using \<open>n = length st\<close> \<open>n' = length st'\<close> prems(1,5,6)
+      using \<open>n = length sm\<close> \<open>n' = length sm'\<close> prems(1,5,6)
       by auto
 
     have "n'' \<ge> n"
-      using \<open>n' = length st'\<close> \<open>n' = n\<close> \<open>n'' = length st''\<close> prems(2,3,6,7) well_behaved_imp_stack_grows
+      using \<open>n' = length sm'\<close> \<open>n' = n\<close> \<open>n'' = length sm''\<close> prems(2,3,6,7) well_behaved_imp_stack_grows
       by auto
 
     have "n = n'''" 
-      using \<open>n \<le> n''\<close> \<open>n'' = length st''\<close> \<open>n''' = length (take n st'')\<close>
+      using \<open>n \<le> n''\<close> \<open>n'' = length sm''\<close> \<open>n''' = length (take n sm'')\<close>
       by force
 
-    show ?thesis using \<open>n = n'''\<close> \<open>n = length st\<close> \<open>n''' = length st'''\<close>
-      by (simp add: single_memory_\<alpha>_def allocated_single_memory_address_def prems(5,8))
-  qed
-  done
-
-lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>a. memory_\<alpha> s (saddr a) \<noteq> None \<longrightarrow> memory_\<alpha> s''' (saddr a) \<noteq> None"
-  apply (cases s; cases s'; cases s''; cases s''')
-  subgoal premises prems for l g st h l' g' st' h' l'' g'' st'' h'' l''' g''' st''' h'''
-  proof -
-    obtain n n' n'' n''' where "n = length st" "n' = length st'" "n'' = length st''" "n''' = length st'''"
-      by blast
-
-    have "n''' = length (take n st'')"
-      using \<open>n = length st\<close> \<open>n''' = length st'''\<close> prems(4,5,7,8)
-      by fastforce
-
-    have "n' = n"
-      using \<open>n = length st\<close> \<open>n' = length st'\<close> prems(1,5,6)
-      by auto
-
-    have "n'' \<ge> n"
-      using \<open>n' = length st'\<close> \<open>n' = n\<close> \<open>n'' = length st''\<close> prems(2,3,6,7) well_behaved_imp_stack_grows
-      by auto
-
-    have "n = n'''" 
-      using \<open>n \<le> n''\<close> \<open>n'' = length st''\<close> \<open>n''' = length (take n st'')\<close>
-      by force
-
-    show ?thesis using \<open>n = n'''\<close> \<open>n = length st\<close> \<open>n''' = length st'''\<close>
+    show ?thesis using \<open>n = n'''\<close> \<open>n = length sm\<close> \<open>n''' = length sm'''\<close>
       by (simp add: single_memory_\<alpha>_def allocated_single_memory_address_def prems(5,8))
   qed
   done
 
 lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (lid n)) = register_\<alpha> s (reg (lid n))"
-  apply (cases s; cases s'')
-  by force
+  by (cases s; cases s''; fastforce)
 
 lemma "s' = push_frame s \<Longrightarrow> s'' = f s' \<Longrightarrow> mem_op_well_behaved f \<Longrightarrow> s''' = pop_frame s s'' \<Longrightarrow> \<forall>n. register_\<alpha> s''' (reg (gid n)) = register_\<alpha> s'' (reg (gid n))"
-  apply (cases s; cases s'')
-  by force
+  by (cases s; cases s''; fastforce)
 
 
 

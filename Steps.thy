@@ -32,16 +32,16 @@ where
 (* Control flow *)
 "(execi pre ([],[],br_label l) s) \<rightarrow>\<^sub>i (flowi s (branch_label l))"
 
-| "get_register s b = ok (vi1 b') \<Longrightarrow>
+| "dereference s b = ok (vi1 b') \<Longrightarrow>
     (execi pre ([],[],br_i1 b l1 l2) s) \<rightarrow>\<^sub>i (flowi s (branch_label (if b' then l1 else l2)))"
-| "\<nexists>b'. get_register s b = ok (vi1 b') \<Longrightarrow>
+| "\<nexists>b'. dereference s b = ok (vi1 b') \<Longrightarrow>
     (execi pre ([],[],br_i1 b l1 l2) s) \<rightarrow>\<^sub>i erri"
 
 | "(execi pre ([],[],ret None) s) \<rightarrow>\<^sub>i (flowi s (return_value None))"
 
-| "get_register s v = ok v' \<Longrightarrow>
+| "dereference s v = ok v' \<Longrightarrow>
     (execi pre ([],[],ret (Some (t, v))) s) \<rightarrow>\<^sub>i (flowi s (return_value (Some v')))"
-| "get_register s v = err _ \<Longrightarrow>
+| "dereference s v = err _ \<Longrightarrow>
     (execi pre ([],[],ret (Some (t, v))) s) \<rightarrow>\<^sub>i erri"
 
 (* Function calls *)
@@ -115,16 +115,16 @@ where
 (* Control flow *)
 "step_i_n (execi pre ([],[],br_label l) s) n (flowi s (branch_label l))"
 
-| "get_register s b = ok (vi1 b') \<Longrightarrow>
+| "dereference s b = ok (vi1 b') \<Longrightarrow>
     step_i_n (execi pre ([],[],br_i1 b l1 l2) s) n (flowi s (branch_label (if b' then l1 else l2)))"
-| "\<nexists>b'. get_register s b = ok (vi1 b') \<Longrightarrow>
+| "\<nexists>b'. dereference s b = ok (vi1 b') \<Longrightarrow>
     step_i_n (execi pre ([],[],br_i1 b l1 l2) s) n erri"
 
 | "step_i_n (execi pre ([],[],ret None) s) n (flowi s (return_value None))"
 
-| "get_register s v = ok v' \<Longrightarrow>
+| "dereference s v = ok v' \<Longrightarrow>
     step_i_n (execi pre ([],[],ret (Some (t, v))) s) n (flowi s (return_value (Some v')))"
-| "get_register s v = err _ \<Longrightarrow>
+| "dereference s v = err _ \<Longrightarrow>
     step_i_n (execi pre ([],[],ret (Some (t, v))) s) n erri"
 
 
@@ -192,6 +192,21 @@ lemma rtranclp_impl_exists_trans_closure_n:
   shows "\<exists>n. trans_closure_n R' s n s'"
   using assms trans_closure_n.intros
   by (induction rule: converse_rtranclp_induct, force, fastforce)
+
+lemma trans_closure_n_impl_rtranclp:
+  assumes "trans_closure_n R' s n s'"
+  assumes "(\<And>s s' n. R' s n s' \<Longrightarrow> R s s')"
+  shows "R\<^sup>*\<^sup>* s s'"
+  using assms trans_closure_n.intros converse_rtranclp_into_rtranclp
+  by (induction rule: trans_closure_n.induct, blast, smt)
+
+
+lemma n_step_impl_step:
+  "step_i_n si n si' \<Longrightarrow> step_i si si'"
+  "step_f_n sf n sf' \<Longrightarrow> step_f sf sf'"
+   apply (induction rule: step_i_n_step_f_n.inducts)
+  using step_i_step_f.intros trans_closure_n_impl_rtranclp
+  by (metis (no_types, lifting))+
 
 lemma step_impl_exists_n_step:
   "step_i si si' \<Longrightarrow> \<exists>n. step_i_n si n si'"
@@ -268,25 +283,19 @@ lemma steps_impl_exists_n_steps:
   using rtranclp_impl_exists_trans_closure_n step_impl_exists_n_step
   by metis+
 
+lemma n_steps_impl_steps:
+  "trans_closure_n (step_i_n) si n si' \<Longrightarrow> step_i\<^sup>*\<^sup>* si si'"
+  "trans_closure_n (step_f_n) sf n sf' \<Longrightarrow> step_f\<^sup>*\<^sup>* sf sf'"
+  using n_step_impl_step trans_closure_n_impl_rtranclp
+  by metis+
+
 
 abbreviation steps_i (infix "\<rightarrow>\<^sub>i*" 50) where
   "s \<rightarrow>\<^sub>i* s' \<equiv> step_i\<^sup>*\<^sup>* s s'"
 abbreviation steps_f :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>f*" 50) where
   "s \<rightarrow>\<^sub>f* s' \<equiv> step_f\<^sup>*\<^sup>* s s'"
 
-fun n_steps :: "'a \<Rightarrow> ('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> bool" where
-  "n_steps s R 0 s'  = (s = s')"
-| "n_steps s R (Suc n) s' = (\<exists>x. R s x \<and> n_steps x R n s')"
 
-notation n_steps ("(_ (_)^_ _)" [51, 0, 0, 51] 50)
-
-
-lemma closure_steps_exists_n_steps[simp]:
-  assumes "R\<^sup>*\<^sup>* fs fs' "
-  shows "\<exists>n. fs (R)^n fs'"
-  using assms
-  apply (induction rule: converse_rtranclp_induct)
-  using n_steps.simps by meson+
 
 
 definition terminal_i where
@@ -483,7 +492,9 @@ lemma step_deterministic[simp]:
 
 
 definition "wp_steps_i s Q \<equiv> \<forall>s'. terminates_to_i s s' \<longrightarrow> \<not>is_erri s' \<and> Q s'"
-definition "wp_steps_f s p Q \<equiv> \<forall>s'. terminates_to_f s s' \<longrightarrow> (\<not>is_errf s') \<and> (Q (state s) p (state s') (ret_value s'))"
+
+definition "wp_steps_f_post s p s' Q \<equiv> (\<not>is_errf s') \<and> (Q (state s) p (state s') (ret_value s'))"
+definition "wp_steps_f s p Q \<equiv> \<forall>s'. terminates_to_f s s' \<longrightarrow> wp_steps_f_post s p s' Q"
 
 
 
@@ -495,7 +506,7 @@ definition "wp_steps_f s p Q \<equiv> \<forall>s'. terminates_to_f s s' \<longri
 section "Instruction Step Intro Rules"
 
 named_theorems wp_instrs_intro
-
+(*
 lemma instrs_phi_intro[wp_instrs_intro]:
   assumes "wp (execute_phi pre p s) (\<lambda>s'. wp_instrs (execi pre (ps, is, t) s') Q)"
   shows "wp_instrs (execi pre (p#ps, is, t) s) Q"
@@ -539,7 +550,7 @@ lemma block_ret_Some_wp_intro[wp_instrs_intro]:
   subgoal premises prems for s'
     proof -
       have "(execi pre ([], [], ret (Some (type, value))) s) \<rightarrow>\<^sub>i (flowi s (return_value (Some v)))"
-        using prems step_i_step_f.intros register_\<alpha>_eq_get_register
+        using prems step_i_step_f.intros register_\<alpha>_eq_dereference
         by auto
 
         then show ?thesis using step_deterministic
@@ -586,10 +597,10 @@ lemma block_br_i1_wp_intro[wp_instrs_intro]:
   apply (intro impI allI) apply (elim conjE)
   by (smt (verit) terminal_impl_no_next_state converse_rtranclpE instruction_state.collapse(3)
       instruction_state.distinct(1) local.instruction_state.distinct(6) local.step_deterministic(1) local.step_i.cases
-      local.step_i_step_f.intros(2) register_\<alpha>_eq_get_register)
+      local.step_i_step_f.intros(2) register_\<alpha>_eq_dereference)
 
 
-
+*)
 
 
 
@@ -633,16 +644,16 @@ where
 (* Control flow *)
 "step_i_replaced_calls (execi pre ([],[],br_label l) s) (flowi s (branch_label l))"
 
-| "get_register s b = ok (vi1 b') \<Longrightarrow>
+| "dereference s b = ok (vi1 b') \<Longrightarrow>
     step_i_replaced_calls (execi pre ([],[],br_i1 b l1 l2) s) (flowi s (branch_label (if b' then l1 else l2)))"
-| "\<nexists>b'. get_register s b = ok (vi1 b') \<Longrightarrow>
+| "\<nexists>b'. dereference s b = ok (vi1 b') \<Longrightarrow>
     step_i_replaced_calls (execi pre ([],[],br_i1 b l1 l2) s) erri"
 
 | "step_i_replaced_calls (execi pre ([],[],ret None) s) (flowi s (return_value None))"
 
-| "get_register s v = ok v' \<Longrightarrow>
+| "dereference s v = ok v' \<Longrightarrow>
     step_i_replaced_calls (execi pre ([],[],ret (Some (t, v))) s) (flowi s (return_value (Some v')))"
-| "get_register s v = err _ \<Longrightarrow>
+| "dereference s v = err _ \<Longrightarrow>
     step_i_replaced_calls (execi pre ([],[],ret (Some (t, v))) s) erri"
 
 
@@ -707,7 +718,7 @@ where
 
 
 
-definition "wp_func_replaced_calls s p Q \<equiv> \<forall>s'. (step_f_replaced_calls\<^sup>*\<^sup>* s s' \<and> (s' \<nexists>\<rightarrow>\<^sub>f)) \<longrightarrow> (\<not>is_errf s' \<and> (Q (state s) p (state s') (ret_value s')))"
+definition "wp_func_replaced_calls s p Q \<equiv> \<forall>s'. (step_f_replaced_calls\<^sup>*\<^sup>* s s' \<and> (s' \<nexists>\<rightarrow>\<^sub>f)) \<longrightarrow> wp_steps_f_post s p s' Q"
 
 definition "call_verification_condition \<equiv>
   \<forall>f. map_of (funcs program) f \<noteq> None \<comment> \<open>For all functions in the program\<close>
@@ -721,6 +732,97 @@ definition "call_verification_condition \<equiv>
       )
     )"
 
+lemma unfolded_wp_vc:
+  assumes "call_verification_condition"
+  assumes "map_of annotations f = Some (fpre, bpres, fpost)"
+  assumes "map_of (funcs program) f = Some fu"
+  assumes "first_label fu = Some l"
+  assumes "fpre s []"
+  assumes "s' \<nexists>\<rightarrow>\<^sub>f"
+  assumes "p = None"
+  assumes "trans_closure_n step_f_n (branchf s p l f) n s'"
+  shows "wp_steps_f_post (branchf s p l f) [] s' fpost"
+proof -
+  have "branchf s None l f \<rightarrow>\<^sub>f* s'"
+    using assms(8) assms(7) n_steps_impl_steps
+    by blast
+
+  then show ?thesis
+    using assms(6)
+  proof (induction rule: rtranclp_induct)
+    case base
+    then show ?case
+      by fastforce
+  next
+    case (step smid send)
+
+    obtain m where "step_f_n smid m send"
+      using step(2) step_impl_exists_n_step
+      by blast
+    then have "m \<le> n"
+      sorry
+
+    obtain ms mp ml mf where "smid = branchf ms mp ml mf"
+      by (metis terminal_impl_no_next_state(2) function_state.collapse(3) function_state.exhaust_disc is_branchf_def is_retf_def step.hyps(2)
+          terminal_state_simps(4,5))
+
+    then show ?case
+      using assms(2,3,4,5,6,7) \<open>m \<le> n\<close>
+    proof (induction n arbitrary: s l f s' rule: less_induct)
+      case (less n s l f s')
+      then show ?case
+      proof (cases "m < n")
+        case True
+        
+        then show ?thesis
+          using less
+          by blast
+      next
+        case False
+        then have "m = n"
+          using less by force
+
+        then show ?thesis 
+        proof (cases "m = 0")
+          case True
+          then show ?thesis
+            using assms(1)
+            unfolding call_verification_condition_def
+            apply (elim allE[where x=f])
+            apply (elim impE) using less apply blast
+            apply (elim conjE)
+            apply (erule allE[where x=fpre])
+            apply (erule allE[where x=bpres])
+            apply (erule allE[where x=fpost])
+            apply (erule allE[where x=fu])
+            apply (elim impE) using less apply blast
+            apply (elim conjE impE)
+            apply (erule allE[where x=l])
+            apply (erule allE[where x=s])
+            apply (elim impE) using less apply blast
+            unfolding wp_func_replaced_calls_def
+            subgoal premises prems
+          proof -
+            have "step_f_replaced_calls\<^sup>*\<^sup>* smid send"
+              
+              sorry
+            then have "step_f_replaced_calls\<^sup>*\<^sup>* (branchf s p l f) smid"
+              sorry
+            then show ?thesis
+              using less step prems
+              by (metis \<open>local.step_f_replaced_calls\<^sup>*\<^sup>* smid send\<close> rtranclp_trans)
+          qed
+          done
+        next
+          case False
+          then show ?thesis sorry
+        qed
+      qed
+    qed
+  qed
+qed
+
+
 lemma
   assumes "call_verification_condition"
   shows "\<forall>f. map_of (funcs program) f \<noteq> None \<comment> \<open>For all functions in the program\<close>
@@ -728,39 +830,28 @@ lemma
     \<and> (\<forall>fpre bpres fpost fu. map_of annotations f = Some (fpre, bpres, fpost) \<and> map_of (funcs program) f = Some fu \<comment> \<open>And for their annotations and the function body\<close>
       \<longrightarrow> (first_label fu \<noteq> None \<comment> \<open>There is a first block label\<close>
           \<and> (\<forall>l s. first_label fu = Some l \<and> fpre s [] \<comment> \<open>And for the first block label and all states that satisfy the precondition\<close>
-            \<longrightarrow> wp_steps_f (branchf s None l f) [] fpost \<comment> \<open>Will satisfy the postcondition of the function with calls replaced\<close>
+            \<longrightarrow> wp_steps_f (branchf s None l f) [] fpost \<comment> \<open>Will satisfy the postcondition of the function\<close>
             )
           )
       )
     )"
-  using assms
-  unfolding call_verification_condition_def
-  apply (intro allI conjI impI)
-    apply blast apply blast
+  apply (intro allI impI conjI)
+  subgoal
+    using assms
+    unfolding call_verification_condition_def
+    by blast
+  subgoal
+    using assms
+    unfolding call_verification_condition_def
+    by blast
+  apply simp
+  apply (elim conjE)
   unfolding wp_steps_f_def
-  apply (intro allI impI) apply (elim conjE)
-  subgoal premises prems for f fpre bpres fpost fu l s s'
-  proof -
-    have path: "(branchf s None l f) \<rightarrow>\<^sub>f* s'"
-      using prems
-      by blast
-    then obtain n where "trans_closure_n (step_f_n) (branchf s None l f) n s'"
-      using steps_impl_exists_n_steps
-      by blast
-
-    then show ?thesis using prems
-    proof (induction rule: less_induct)
-      case (less n)
-      
-      then show ?case
-        
-        sorry
-    qed
-  qed
-  done
-
-
-
+  apply (intro allI impI)
+  apply (elim conjE)
+  apply (drule steps_impl_exists_n_steps)
+  apply (elim exE)
+  using unfolded_wp_vc assms by blast
 
 
 definition "has_annotation fs \<equiv>
