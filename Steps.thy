@@ -12,7 +12,7 @@ datatype instruction_state = execi "llvm_identifier option" llvm_instruction_blo
   | is_erri: erri
 
 datatype (discs_sels) function_state = branchf (state: state) "llvm_identifier option" llvm_identifier llvm_identifier
-  | retf (state: state) (ret_value: "llvm_value option") llvm_identifier
+  | retf (state: state) (ret_value: "llvm_value option")
   | is_errf: errf
 
 
@@ -47,7 +47,7 @@ where
 (* Function calls *)
 | "map_of (funcs program) f = Some fu
   \<Longrightarrow> first_label fu = Some b
-  \<Longrightarrow> step_f\<^sup>*\<^sup>* (branchf (push_frame s) None b f) (retf s' v' f)
+  \<Longrightarrow> step_f\<^sup>*\<^sup>* (branchf (push_frame s) None b f) (retf s' v')
   \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i (execi pre ([],is,t) (pop_frame s s'))"
 | "map_of (funcs program) f = None
   \<Longrightarrow> (execi pre ([],(call n ty f p)#is,t) s) \<rightarrow>\<^sub>i erri"
@@ -81,7 +81,7 @@ where
 | "map_of (funcs program) f = Some fu \<Longrightarrow>
     map_of (llvm_function.blocks fu) lab = Some b \<Longrightarrow>
     step_i\<^sup>*\<^sup>* (execi prev b s) (flowi s' (return_value v)) \<Longrightarrow>
-    branchf s prev lab f \<rightarrow>\<^sub>f retf s' v f"
+    branchf s prev lab f \<rightarrow>\<^sub>f retf s' v"
 
 (* Block errors *)
 | "map_of (funcs program) f = Some fu \<Longrightarrow>
@@ -131,7 +131,7 @@ where
 (* Function calls *)
 | "map_of (funcs program) f = Some fu
   \<Longrightarrow> first_label fu = Some b
-  \<Longrightarrow> trans_closure_n (step_f_n) (branchf (push_frame s) None b f) n (retf s' v' f)
+  \<Longrightarrow> trans_closure_n (step_f_n) (branchf (push_frame s) None b f) n (retf s' v')
   \<Longrightarrow> step_i_n (execi pre ([],(call na ty f p)#is,t) s) (n+1) (execi pre ([],is,t) (pop_frame s s'))"
 
 | "map_of (funcs program) f = None
@@ -170,7 +170,7 @@ where
 | "map_of (funcs program) f = Some fu \<Longrightarrow>
     map_of (llvm_function.blocks fu) lab = Some b \<Longrightarrow>
     trans_closure_n (step_i_n) (execi prev b s) n (flowi s' (return_value v)) \<Longrightarrow>
-    step_f_n (branchf s prev lab f) n (retf s' v f)"
+    step_f_n (branchf s prev lab f) n (retf s' v)"
 
 
 (* Block errors *)
@@ -215,7 +215,7 @@ lemma step_impl_exists_n_step:
   apply (simp add: step_i_n_step_f_n.intros)+
   subgoal premises prems for f fu b s s' v' pre n ty p ins t
   proof -
-    obtain n where "trans_closure_n (step_f_n) (branchf (push_frame s) None b f) n (retf s' v' f)"
+    obtain n where "trans_closure_n (step_f_n) (branchf (push_frame s) None b f) n (retf s' v')"
       using prems(3)
       apply (induction rule: converse_rtranclp_induct)
       apply (simp add: trans_closure_n.intros(1))
@@ -301,7 +301,7 @@ abbreviation steps_f :: "function_state \<Rightarrow> function_state \<Rightarro
 definition terminal_i where
   "terminal_i s \<equiv> (case s of flowi _ _ \<Rightarrow> True | erri \<Rightarrow> True | _ \<Rightarrow> False)"
 definition terminal_f where
-  "terminal_f s \<equiv> (case s of retf _ _ _ \<Rightarrow> True | errf \<Rightarrow> True | _ \<Rightarrow> False)"
+  "terminal_f s \<equiv> (case s of retf _ _ \<Rightarrow> True | errf \<Rightarrow> True | _ \<Rightarrow> False)"
 
 notation terminal_i ("_ \<nexists>\<rightarrow>\<^sub>i" 50)
 notation terminal_f ("_ \<nexists>\<rightarrow>\<^sub>f" 50)
@@ -316,7 +316,7 @@ lemma terminal_state_simps[simp]:
   "erri \<nexists>\<rightarrow>\<^sub>i"
   "\<not>(execi pre b s \<nexists>\<rightarrow>\<^sub>i)"
   "errf \<nexists>\<rightarrow>\<^sub>f"
-  "retf s v f \<nexists>\<rightarrow>\<^sub>f"
+  "retf s v \<nexists>\<rightarrow>\<^sub>f"
   "\<not>(branchf s p l f \<nexists>\<rightarrow>\<^sub>f)"
   unfolding terminal_i_def terminal_f_def
   by auto
@@ -357,10 +357,10 @@ lemma step_deterministic[simp]:
   using step_i.simps apply fastforce
   subgoal premises prems for f fu b s s' v' pre na ty p ins t
   proof -
-    have "branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s' v' f"
+    have "branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s' v'"
       by (metis (no_types, lifting) mono_rtranclp prems(3))
 
-    then have "\<And>s'' v'' f'. branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s'' v'' f' \<longrightarrow> (s'' = s' \<and> v'' = v' \<and> f' = f)"
+    then have "\<And>s'' v''. branchf (push_frame s) None b f \<rightarrow>\<^sub>f* retf s'' v'' \<longrightarrow> (s'' = s' \<and> v'' = v')"
       using prems(3) 
       apply (induction rule: converse_rtranclp_induct)
       apply (metis function_state.inject(2) terminal_impl_no_next_state(2) converse_rtranclpE terminal_state_simps(5))
@@ -388,7 +388,7 @@ lemma step_deterministic[simp]:
 
     moreover
 
-    have "\<And>s' v' f'. \<not>(branchf (push_frame s) None b f) \<rightarrow>\<^sub>f* retf s' v' f'"
+    have "\<And>s' v'. \<not>(branchf (push_frame s) None b f) \<rightarrow>\<^sub>f* retf s' v'"
       using prems(3)
       apply (induction rule: converse_rtranclp_induct)
       apply (metis terminal_impl_no_next_state(2) terminal_state_simps(4) converse_rtranclpE function_state.distinct(5))
@@ -702,7 +702,7 @@ where
 | "map_of (funcs program) f = Some fu \<Longrightarrow>
     map_of (llvm_function.blocks fu) lab = Some b \<Longrightarrow>
     step_i_replaced_calls\<^sup>*\<^sup>* (execi prev b s) (flowi s' (return_value v)) \<Longrightarrow>
-    step_f_replaced_calls (branchf s prev lab f) (retf s' v f)"
+    step_f_replaced_calls (branchf s prev lab f) (retf s' v)"
 
 
 (* Block errors *)
