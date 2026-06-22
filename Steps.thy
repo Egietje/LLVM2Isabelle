@@ -290,12 +290,23 @@ section "Annotations"
 type_synonym function_precondition = "state \<Rightarrow> llvm_value list \<Rightarrow> bool"
 type_synonym function_postcondition = "state \<Rightarrow> llvm_value list \<Rightarrow> state \<Rightarrow> llvm_value option \<Rightarrow> bool"
 type_synonym block_precondition = "state \<Rightarrow> bool"
-type_synonym block_preconditions = "((llvm_identifier option * llvm_identifier) * block_precondition) list"
+type_synonym block_preconditions = "((llvm_identifier * llvm_identifier) * block_precondition) list"
 type_synonym annotations = "(llvm_identifier * (function_precondition * block_preconditions * function_postcondition)) list"
 
 context
   fixes annotations :: "annotations"
 begin
+
+
+definition "global_verification_condition \<equiv>
+  ((\<forall>f fu fpre bpres fpost l s.
+    map_of (funcs program) f = Some fu \<and>
+    map_of annotations f = Some (fpre, bpres, fpost) \<and>
+    first_label fu = Some l \<and> 
+    fpre s []
+    \<longrightarrow> wp_steps_f (branchf s None l f) [] fpost)
+  \<and> (\<forall>f. map_of (funcs program) f \<noteq> None \<longrightarrow> map_of annotations f \<noteq> None))"
+
 
 
 
@@ -335,7 +346,6 @@ where
   \<Longrightarrow> first_label fu = None
   \<Longrightarrow> step_i_replaced_calls (execi pre ([],(call na ty f p)#is,t) s) erri"
 
-(* Precondition Failure / Missing Annotations step to ANY state si' (Chaos Over-approximation) *)
 | "map_of (funcs program) f = Some fu
   \<Longrightarrow> first_label fu = Some b
   \<Longrightarrow> map_of annotations f = Some (fpre,bpres,fpost)
@@ -382,6 +392,19 @@ where
 | "map_of (funcs program) f = None \<Longrightarrow>
      step_f_replaced_calls (branchf s prev lab f) errf"
 
+
+fun n_rcf_steps where
+  "n_rcf_steps 0 s s' = (s = s')"
+| "n_rcf_steps (Suc n) s s' = (\<exists>x. step_f_replaced_calls s x \<and> n_rcf_steps n x s')"
+
+lemma obtain_n_rcf_steps:
+  assumes "step_f_replaced_calls\<^sup>*\<^sup>* s s'"
+  shows "\<exists>n. n_rcf_steps n s s'"
+  using assms
+  apply (induction rule: converse_rtranclp_induct)
+  using n_rcf_steps.simps by blast+
+
+
 definition "wp_func_replaced_calls s p Q \<equiv> \<forall>s'. (step_f_replaced_calls\<^sup>*\<^sup>* s s' \<and> (s' \<nexists>\<rightarrow>\<^sub>f)) \<longrightarrow> wp_steps_f_post s p s' Q"
 
 
@@ -394,14 +417,7 @@ definition "call_verification_condition \<equiv>
     \<longrightarrow> wp_func_replaced_calls (branchf s None l f) [] fpost)
   \<and> (\<forall>f. map_of (funcs program) f \<noteq> None \<longrightarrow> map_of annotations f \<noteq> None))"
 
-definition "global_verification_condition \<equiv>
-  ((\<forall>f fu fpre bpres fpost l s.
-    map_of (funcs program) f = Some fu \<and>
-    map_of annotations f = Some (fpre, bpres, fpost) \<and>
-    first_label fu = Some l \<and> 
-    fpre s []
-    \<longrightarrow> wp_steps_f (branchf s None l f) [] fpost)
-  \<and> (\<forall>f. map_of (funcs program) f \<noteq> None \<longrightarrow> map_of annotations f \<noteq> None))"
+
 
 lemma step_impl_step_replaced:
   assumes "call_verification_condition"
@@ -442,7 +458,7 @@ next
     \<comment> \<open> depending on if we have annotations\<close>
     proof (cases "map_of annotations f = None")
       case True
-      \<comment> \<open> if not - we can step to ANY next state (undeterministic), so that includes the proper state we need \<close>
+      \<comment> \<open> if not - we can step to ANY next state (nondeterministic), so that includes the proper state we need \<close>
       \<comment> \<open> this is safe for our verification since that ALSO means it can step to an error,
            which means our verification conditions cannot proved if there are no annotations \<close>
       then show ?thesis
@@ -571,8 +587,6 @@ next
 qed
 
 
-
-
 lemma unfolded_wp_vc:
   assumes "call_verification_condition"
   assumes "map_of (funcs program) f = Some fu"
@@ -594,27 +608,26 @@ lemma call_vc_impl_global_vc:
   by blast
 
 
-
 section "Floyd Method"
-
-fun replaced_n_steps :: "function_state \<Rightarrow> nat \<Rightarrow> function_state \<Rightarrow> bool" ("_ (\<rightarrow>\<^sub>f\<^sub>R)^_ _" [50,0,51] 50) where
-  "fs \<rightarrow>\<^sub>f\<^sub>R^0 fs' = (fs' = fs)"
-| "fs \<rightarrow>\<^sub>f\<^sub>R^(Suc n) fs' = (\<exists>fs''. step_f_replaced_calls fs fs'' \<and> fs'' \<rightarrow>\<^sub>f\<^sub>R^n fs')"
-
-lemma exists_n_replaced_steps:
-  "step_f_replaced_calls\<^sup>*\<^sup>* fs fs' \<Longrightarrow> \<exists>n. fs \<rightarrow>\<^sub>f\<^sub>R^n fs'"
-  apply (induction rule: converse_rtranclp_induct)
-  using replaced_n_steps.simps by blast+
 
 definition "has_annotation fs \<equiv>
   (case fs of
     errf \<Rightarrow> False
   | retf _ _ f \<Rightarrow> map_of (funcs program) f \<noteq> None \<and> map_of annotations f \<noteq> None
-  | branchf _ p l f \<Rightarrow> map_of (funcs program) f \<noteq> None \<and>
+  | branchf _ p l f \<Rightarrow> (case map_of (funcs program) f of
+      None \<Rightarrow> False
+    | Some fu \<Rightarrow>
       (case map_of annotations f of 
         None \<Rightarrow> False
-      | Some (fpre, bpres, fpost) \<Rightarrow> p = None \<or> map_of bpres (p, l) \<noteq> None
+      | Some (fpre, bpres, fpost) \<Rightarrow>
+        (case p of
+          None \<Rightarrow> (case first_label fu of
+            Some lab \<Rightarrow> l = lab
+          | None \<Rightarrow> False)
+        | Some prev \<Rightarrow> map_of bpres (prev, l) \<noteq> None
+        )
       )
+    )
   )"
 
 definition "annotation_holds s_init fs \<equiv>
@@ -623,21 +636,26 @@ definition "annotation_holds s_init fs \<equiv>
   | retf s v f \<Rightarrow> 
       (case map_of annotations f of 
         None \<Rightarrow> False
-      | Some (fpre, bpres, fpost) \<Rightarrow> fpost s_init [] s v
+      | Some (fpre, bpres, fpost) \<Rightarrow> map_of (funcs program) f \<noteq> None \<and> fpost s_init [] s v
       )
-  | branchf s p l f \<Rightarrow> 
+  | branchf s p l f \<Rightarrow> (case map_of (funcs program) f of
+      None \<Rightarrow> False
+    | Some fu \<Rightarrow>
       (case map_of annotations f of 
         None \<Rightarrow> False
       | Some (fpre, bpres, fpost) \<Rightarrow>
           (case p of
-            None \<Rightarrow> fpre s []
-          | Some pred \<Rightarrow> 
-              (case map_of bpres (Some pred, l) of
+            None \<Rightarrow> (case first_label fu of
+              None \<Rightarrow> False
+            | Some lab \<Rightarrow> l = lab \<and> s = s_init \<and> fpre s [])
+          | Some prev \<Rightarrow> 
+              (case map_of bpres (prev, l) of
                 None \<Rightarrow> False
               | Some pre \<Rightarrow> pre s
               )
           )
       )
+    )
   )"
 
 definition step_until :: "function_state \<Rightarrow> function_state \<Rightarrow> bool" where
@@ -652,42 +670,26 @@ abbreviation annotated_steps :: "function_state \<Rightarrow> function_state \<R
 definition wp_step where
   "wp_step fs Q \<equiv> (\<forall>fs'. step_f_replaced_calls fs fs' \<longrightarrow> \<not>is_errf fs' \<and> Q fs')"
 
-definition wp_func where
-  "wp_func fs Q \<equiv> (\<forall>fs'. fs \<rightarrow>\<^sub>f* fs' \<and> (fs' \<nexists>\<rightarrow>\<^sub>f) \<longrightarrow> \<not>is_errf fs' \<and> (case fs' of retf s' v' _ \<Rightarrow> Q s' v' | _ \<Rightarrow> False))"
-
-definition
-  "wp_func_replaced_calls s Q \<equiv> \<forall>s'. (step_f_replaced_calls\<^sup>*\<^sup>* s s' \<and> (s' \<nexists>\<rightarrow>\<^sub>f)) \<longrightarrow> \<not>is_errf s' \<and> (case s' of retf s_res v_res _ \<Rightarrow> Q s_res v_res | _ \<Rightarrow> False)"
-
-definition "call_verification_condition \<equiv>
-  ((\<forall>f fu pres post l s.
-    map_of (funcs program) f = Some fu \<and> 
-    map_of annotations f = Some (pres, post) \<and>
-    first_label fu = Some l \<and> 
-    (case map_of pres (None, l) of Some precond \<Rightarrow> precond s | None \<Rightarrow> False)
-    \<longrightarrow> wp_func_replaced_calls (branchf s None l f) post)
-  \<and> (\<forall>f. map_of (funcs program) f \<noteq> None \<longrightarrow> map_of annotations f \<noteq> None))"
-
 definition wp_steps_until where
-  "wp_steps_until fs Q \<equiv> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> \<not>is_errf fs \<longrightarrow> \<not>is_errf fs') \<and> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> has_annotation fs' \<longrightarrow> Q fs')"
+  "wp_steps_until fs Q \<equiv> (\<forall>fs'. step_until\<^sup>*\<^sup>* fs fs' \<and> \<not>is_errf fs \<longrightarrow> \<not>is_errf fs') \<and> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> has_annotation fs' \<longrightarrow> Q fs')"
 
-definition wp_annotated_step_f where
-  "wp_annotated_step_f fs Q \<equiv> (\<forall>fs'. ((fs \<Rightarrow> fs') \<longrightarrow> (\<not>is_errf fs' \<and> Q fs')))"
+definition wp_annotated_step where
+  "wp_annotated_step fs Q \<equiv> (\<forall>fs'. ((fs \<Rightarrow> fs') \<longrightarrow> (\<not>is_errf fs' \<and> Q fs')))"
 
-definition "floyd_cond s_init s p l f \<equiv> wp_annotated_step_f (branchf s p l f) (\<lambda>fs'. annotation_holds s_init fs')"
+definition "floyd_cond s_init s p l f \<equiv> wp_annotated_step (branchf s p l f) (\<lambda>fs'. annotation_holds s_init fs')"
 
 definition floyd_vc :: "bool" where
-  "floyd_vc \<equiv>
-    \<forall>f. map_of (funcs program) f \<noteq> None \<longrightarrow> 
+  "floyd_vc \<equiv> \<forall>f. (map_of (funcs program) f \<noteq> None) \<longrightarrow> 
     (case map_of annotations f of
       None \<Rightarrow> False 
-    | Some (fpre, bpres, fpost) \<Rightarrow>
+    | Some (fpre, bpres, fpost) \<Rightarrow> (
         (first_label (the (map_of (funcs program) f)) \<noteq> None) \<and> 
-        (\<forall>s_init. fpre s_init [] \<longrightarrow> 
-           floyd_cond s_init s_init None (the (first_label (the (map_of (funcs program) f)))) f) \<and>
-        (\<forall>pred l. map_of bpres (Some pred, l) \<noteq> None \<longrightarrow> 
+        (\<forall>init_state. fpre init_state [] \<longrightarrow> 
+           floyd_cond init_state init_state None (the (first_label (the (map_of (funcs program) f)))) f) \<and>
+        (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
            (\<forall>s_init s. annotation_holds s_init (branchf s (Some pred) l f) \<longrightarrow> 
               floyd_cond s_init s (Some pred) l f)
-        )
+        ))
     )"
 
 
@@ -695,23 +697,283 @@ lemma step_until_closure_to_annotated_step:
   assumes "step_f_replaced_calls fs x"
   assumes "step_until\<^sup>*\<^sup>* x fs'"
   assumes "has_annotation fs' \<or> is_errf fs'"
-  shows "fs \<Rightarrow>\<^sub>f fs'"
-  unfolding annotated_step_f_def
+  shows "fs \<Rightarrow> fs'"
+  unfolding annotated_step_def
   using assms
   by blast
 
 
-lemma steps_impl_annotated_steps:
-  assumes "step_f_replaced_calls\<^sup>*\<^sup>* sf sf'"
-  assumes "has_annotation sf'"
-  shows "sf \<Rightarrow>* sf'"
+lemma wp_annotated_step_intro:
+  assumes "wp_step fs (\<lambda>fs'. wp_steps_until fs' Q)"
+  shows "wp_annotated_step fs Q"
   using assms
-proof (induction rule: rtranclp_induct)
-  case base
+  unfolding wp_annotated_step_def wp_step_def wp_steps_until_def annotated_step_def
+  by blast
+
+lemma annotation_holds_impl_annotation_holds_single_step:
+  assumes "floyd_vc"
+  assumes "annotation_holds sinit sf"
+  assumes "sf \<Rightarrow> sf'"
+  shows "annotation_holds sinit sf'"
+  apply (cases sf) 
+  subgoal for s p l f
+    using assms(2)
+    apply (cases "map_of (funcs program) f"; cases "map_of annotations f")
+    subgoal apply (unfold annotation_holds_def) by simp
+    subgoal apply (unfold annotation_holds_def) by simp
+    subgoal apply (unfold annotation_holds_def) by simp
+    subgoal for fu annots apply simp
+      apply (cases annots; simp)
+      subgoal premises prems for fpre bpres fpost
+      proof (cases p)
+        case None
+
+        have firstlab: "first_label fu = Some l"
+          using None prems
+          unfolding annotation_holds_def
+          by (simp split: option.splits)
+
+        have preholds: "fpre s []" 
+          using assms(2) prems(1,3,4) None firstlab
+          unfolding annotation_holds_def
+          by auto
+
+        have s_eq_sinit: "s = sinit" 
+          using assms(2) prems(1,3,4) None firstlab
+          unfolding annotation_holds_def
+          by simp
+
+        show ?thesis
+          using assms(1)
+          unfolding floyd_vc_def
+          apply -
+          apply (erule allE[where x=f])
+          apply (erule impE) using prems apply blast
+          apply (cases "map_of annotations f") apply simp
+          apply (simp del: split_paired_All)
+          apply (erule conjE)
+          subgoal for annots
+            apply (cases annots)
+            apply (simp del: split_paired_All)
+            subgoal for fpre' bpres' fpost'
+              apply (erule conjE)
+              apply (erule allE[where x=s])
+              apply (erule impE) using preholds prems apply fastforce
+              unfolding floyd_cond_def
+              using None firstlab assms(3) prems(1,3) wp_annotated_step_def s_eq_sinit
+              by auto
+            done
+          done
+      next
+        case (Some pred)
+        then show ?thesis
+          using assms(1)
+          unfolding floyd_vc_def
+          apply -
+          apply (erule allE[where x=f])
+          apply (erule impE) using prems apply blast
+          apply (cases "map_of annotations f") apply simp
+          apply (simp del: split_paired_All)
+          apply (erule conjE)
+          subgoal for annots
+            apply (cases annots)
+            apply (simp del: split_paired_All)
+            subgoal for fpre' bpres' fpost'
+              apply (erule conjE)
+              apply (erule allE[where x=s]) apply (thin_tac "fpre' s [] \<longrightarrow> _")
+              apply (erule allE[where x=pred])
+              apply (erule allE[where x=l])
+              apply (erule impE)
+              subgoal
+                using prems
+                unfolding annotation_holds_def
+                by (simp split: option.splits)
+              apply (erule allE[where x=sinit])
+              apply (erule allE[where x=s])
+              unfolding floyd_cond_def
+              using assms(2,3) prems(1) wp_annotated_step_def
+              by blast
+            done
+          done
+        qed
+      done
+    done
+  subgoal for s v f 
+    using assms
+    unfolding annotated_step_def
+    by (simp add: Steps.step_f_replaced_calls.simps)
+  using assms
+  unfolding annotation_holds_def
+  by simp
+
+
+
+lemma annotation_holds_impl_annotation_holds_multi_step:
+  assumes "sf \<Rightarrow>* sf'"
+  assumes "floyd_vc"
+  assumes "annotation_holds sinit sf"
+  shows "annotation_holds sinit sf'"
+  using assms
+  apply (induction rule: rtranclp_induct)
+   apply blast
+  using annotation_holds_impl_annotation_holds_single_step
+  by blast
+
+
+
+lemma exists_first_cutpoint:
+  assumes "n_rcf_steps n s s'"
+  assumes "has_annotation s' \<or> is_errf s'"
+  shows "\<exists>x m. step_until\<^sup>*\<^sup>* s x \<and> (has_annotation x \<or> is_errf x) \<and> n_rcf_steps m x s' \<and> m \<le> n"
+  using assms
+proof (induction n arbitrary: s)
+  case 0
   then show ?case by simp
 next
-  case (step y z)
-  from step.IH show ?case
+  case (Suc n)
+  then obtain x where xdef: "n_rcf_steps n x s' \<and> step_f_replaced_calls s x" by auto
+  then show ?case
+    by (metis converse_rtranclp_into_rtranclp le_refl less_Suc_eq_le nat_less_le
+        rtranclp.rtrancl_refl step_until_def Suc)
+qed
+
+
+lemma steps_impl_annotated_steps:
+  assumes "step_f_replaced_calls\<^sup>*\<^sup>* sf sf'"
+  assumes "has_annotation sf' \<or> is_errf sf'"
+  shows "sf \<Rightarrow>* sf'"
+  using assms
+proof -
+  obtain n where ndef: "n_rcf_steps n sf sf'"
+    using assms obtain_n_rcf_steps
+    by blast
+  then show ?thesis
+  proof (induction n arbitrary: sf rule: less_induct)
+    case (less n sf)
+    then show ?case proof (cases n)
+      case 0
+      then show ?thesis
+        using less
+        by simp
+    next
+      case (Suc nat)
+      
+      obtain s1 where "step_f_replaced_calls sf s1" and "n_rcf_steps nat s1 sf'"
+        using less ndef Suc
+        by auto
+
+      then obtain s2 m where steps: "step_until\<^sup>*\<^sup>* s1 s2 \<and> (has_annotation s2 \<or> is_errf s2) \<and> n_rcf_steps m s2 sf' \<and> m \<le> nat"
+        using exists_first_cutpoint less assms
+        by blast          
+      then have "sf \<Rightarrow> s2"
+        using \<open>step_f_replaced_calls sf s1\<close> step_until_closure_to_annotated_step
+        by blast
+      then show ?thesis
+        by (metis Suc steps converse_rtranclp_into_rtranclp less.IH less_Suc_eq_le)
+    qed
+  qed
+qed
+
+lemma annotated_step_keeps_function_ret:
+  assumes "step_f_replaced_calls\<^sup>*\<^sup>* sf (retf s' v f')"
+  assumes "sf = (branchf s p l f)"
+  shows "f' = f"
+  using assms
+  apply (induction arbitrary: s p l f rule: converse_rtranclp_induct) apply blast
+  by (smt (verit) converse_rtranclpE function_state.distinct(1,6) function_state.inject(1)
+      function_state.sel(7) step_f_replaced_calls.simps
+      terminal_state_simps(4,6))
+  
+
+lemma
+  assumes "floyd_vc"
+  shows "call_verification_condition"
+  unfolding call_verification_condition_def
+  apply (rule conjI) defer apply (rule allI)
+  subgoal for f
+    using assms
+    unfolding floyd_vc_def
+    apply -
+    apply (erule allE[where x=f])
+    by (auto split: option.splits)
+  apply (intro allI)
+  subgoal for f fu fpre bpres fpost l s
+    apply (intro impI)
+    apply (elim conjE)
+    unfolding wp_func_replaced_calls_def
+    apply (intro allI impI)
+    subgoal premises prems for s'
+    proof -
+      have rc_path: "step_f_replaced_calls\<^sup>*\<^sup>* (branchf s None l f) s'"
+        using prems
+        by blast
+
+      have s'_ter: "s' \<nexists>\<rightarrow>\<^sub>f"
+        using prems
+        by blast
+
+      have init_annot: "annotation_holds s (branchf s None l f)"
+        using assms
+        unfolding floyd_vc_def
+        apply -
+        apply (erule allE[where x=f])
+        apply auto
+        using prems apply simp
+        apply (simp split: option.splits del: split_paired_All)
+        subgoal for annots
+          apply (cases annots) apply (simp del: split_paired_All)
+          apply (elim conjE) apply (erule allE[where x=s])
+          subgoal for fpre' bpres' fpost'
+            apply (elim impE)
+            using prems apply simp
+            unfolding annotation_holds_def
+            apply (auto split: option.splits)
+            using prems
+            by auto
+          done
+        done
+      
+      have annotated: "has_annotation s' \<or> is_errf s'"
+      proof (cases s')
+        case (branchf x11 x12 x13 x14)
+        then show ?thesis
+          using s'_ter
+          by force
+      next
+        case (retf state val func)
+        obtain start where path: "step_f_replaced_calls\<^sup>*\<^sup>* start s'" and startdef: "start \<noteq> retf state val func"
+          using rc_path
+          by blast
+
+        have "func = f" using path retf
+          apply (induction rule: rtranclp_induct) using startdef apply blast
+          using annotated_step_keeps_function_ret rc_path retf by blast
+        
+        then show ?thesis
+          using prems has_annotation_def retf by fastforce
+      next
+        case errf
+        then show ?thesis 
+          by simp
+      qed
+
+      have "(branchf s None l f) \<Rightarrow>* s'"
+        using annotated init_annot rc_path steps_impl_annotated_steps
+        by blast
+
+      then have "annotation_holds s s'"
+        using annotation_holds_impl_annotation_holds_multi_step assms init_annot
+        by blast
+
+      then show ?thesis apply (cases s')
+        using s'_ter terminal_state_simps(6) apply blast defer unfolding annotation_holds_def apply simp apply (auto split: option.splits)
+        unfolding wp_steps_f_post_def
+        by (metis (no_types, lifting) annotated_step_keeps_function_ret function_state.disc(8)
+            function_state.sel(1,2,6) option.inject prems(2,5) prod.inject)
+    qed
+    done
+  done
+
 
 
 end
