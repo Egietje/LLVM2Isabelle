@@ -233,7 +233,7 @@ fun execute_instruction :: "llvm_instruction \<Rightarrow> state \<Rightarrow> s
 | "execute_instruction (add name wrap type v1 v2) s = execute_add name wrap v1 v2 s"
   (* Get values, do comparison, and store in register. *)
 | "execute_instruction (icmp name same_sign cond type v1 v2) s = execute_icmp name same_sign cond v1 v2 s"
-| "execute_instruction (call name type fun params) s = err internal_error"
+| "execute_instruction (call name type fun param) s = err internal_error"
 
 lemma [wp_intro]: "wp (execute_alloca name s) Q \<Longrightarrow> wp (execute_instruction (alloca name type align) s) Q"
   by simp

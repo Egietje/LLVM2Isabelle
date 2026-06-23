@@ -10,7 +10,7 @@ subsection "Types"
 datatype error = unknown_register_name | invalid_address | global_register_overwrite
   | not_an_address | incompatible_types | unknown_label
   | phi_no_previous_block | phi_label_not_found | phi_label_not_distinct
-  | internal_error | unfreeable_memory
+  | internal_error | unfreeable_memory | invalid_parameter_length | no_return_value
 
 datatype 'a result = ok 'a | err error
 

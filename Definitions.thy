@@ -56,10 +56,10 @@ type_synonym llvm_labeled_blocks = "(llvm_identifier * llvm_instruction_block) l
 datatype llvm_block_return = return_value "llvm_value option"
                            | branch_label llvm_identifier
 
-datatype llvm_function = func llvm_type (blocks: llvm_labeled_blocks)
+datatype llvm_function = func llvm_type (params: "(llvm_identifier * llvm_type) list") (blocks: llvm_labeled_blocks)
 hide_const (open) llvm_function.blocks
 
-datatype llvm_program = program (funcs: "(llvm_identifier * llvm_function) list")
+type_synonym llvm_program = "(llvm_identifier * llvm_function) list"
 
 
 
@@ -106,7 +106,7 @@ definition set_single_register :: "string \<Rightarrow> llvm_value \<Rightarrow>
   "set_single_register n v r = Mapping.update n v r"
 
 fun set_register :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> state result" where
-  "set_register (lid n) v (l,g,s,h) = ok (set_single_register n v l,g,s,h)"
+  "set_register (lid n) v (lr,gr,sm,hm,gm) = ok (set_single_register n v lr,gr,sm,hm,gm)"
 | "set_register _ _ _ = err global_register_overwrite"
 
 subsection "Memory operations"
