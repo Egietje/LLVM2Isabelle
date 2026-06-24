@@ -11,7 +11,7 @@ abbreviation register_contains_allocated_address :: "llvm_identifier \<Rightarro
   "register_contains_allocated_address n s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a \<noteq> None"
 
 abbreviation register_contains_address_with_value :: "llvm_identifier \<Rightarrow> llvm_value \<Rightarrow> state \<Rightarrow> bool" where
-  "register_contains_address_with_value n v s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a = Some (Some v)"
+  "register_contains_address_with_value n v s \<equiv> \<exists>a. register_\<alpha> s (reg n) = Some (addr a) \<and> memory_\<alpha> s a = Some (mem_val v)"
 
 fun unique_address :: "llvm_address \<Rightarrow> llvm_address list \<Rightarrow> bool" where
   "unique_address ad (a#as) = ((ad \<noteq> a) \<and> unique_address ad as)"
@@ -65,7 +65,7 @@ subsection "Subgoal Solving Methods"
 method sub_instantiate_register_address = rule asm_rl[of "register_\<alpha> _ _ = Some (addr _)"], (fastforce | simp)?; fail
 method sub_memory_allocated = rule asm_rl[of "memory_\<alpha> _ _ \<noteq> None"], (fastforce | simp)?; fail
 method sub_register_value = rule asm_rl[of "register_\<alpha> _ _ = Some _"], (fastforce | simp)?; fail
-method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (Some _)"], (fastforce | simp split: if_splits)?; fail
+method sub_memory_value = rule asm_rl[of "memory_\<alpha> _ _ = Some (mem_val _)"], (fastforce | simp split: if_splits)?; fail
 method sub_add_poison = (rule asm_rl[of "add_no_poison32 _ _ _"] | rule asm_rl[of "add_no_poison64 _ _ _"]), (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
 method sub_icmp_same_signs = (rule asm_rl[of "if _ then same_signs32 _ _ else True"] | rule asm_rl[of "if _ then same_signs64 _ _ else True"]), (fastforce | simp split: if_splits add: word_sless_alt word_sle_eq)?; fail
 method sub_map_of_some = rule asm_rl[of "map_of _ _ = Some _"], (fastforce | simp)?; fail
@@ -94,12 +94,10 @@ method strat_load_dbg   = rule asm_rl[of "wp (execute_load _ _ _) _"], strat_ins
 method strat_add_dbg    = rule asm_rl[of "wp (execute_add _ _ _ _ _) _"], strat_instr_dbg
 method strat_icmp_dbg   = rule asm_rl[of "wp (execute_icmp _ _ _ _ _ _) _"], strat_instr_dbg
 
-method unfold_wp_instrs_instr = rule asm_rl[of "wp_instrs _ (execi _ ([],_#_,_) _) _"], rule wp_instrs_intro
-
 method unfold_instr = rule asm_rl[of "wp (execute_instruction _ _) _"], rule wp_intro
 
-method instr_vcg_step = unfold_wp_instrs_instr | unfold_instr | strat_alloca | strat_store | strat_load | strat_add | strat_icmp
-method instr_vcg_step_dbg = unfold_wp_instrs_instr | unfold_instr | strat_alloca_dbg | strat_store_dbg | strat_load_dbg | strat_add_dbg | strat_icmp_dbg
+method instr_vcg_step = unfold_instr | strat_alloca | strat_store | strat_load | strat_add | strat_icmp
+method instr_vcg_step_dbg = unfold_instr | strat_alloca_dbg | strat_store_dbg | strat_load_dbg | strat_add_dbg | strat_icmp_dbg
 
 
 subsection "Phi Node Methods"

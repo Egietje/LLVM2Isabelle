@@ -1,5 +1,5 @@
 theory ExamplePrograms
-  imports "VCG" "HOL-Library.AList_Mapping" "Word_Lib/Word_32" "Word_Lib/Word_64"
+  imports "HOL-Library.AList_Mapping" "Word_Lib/Word_32" "Word_Lib/Word_64" "VCG"
 begin
 
 section "Word Lemma Bundle"
@@ -9,6 +9,8 @@ begin
 
 lemma lt_imp_le: "(i::word32) <s 2 ^ 31 - 1 \<Longrightarrow> i \<le>s 2 ^ 31 - 2"
   by (simp add: word_sle_eq word_sless_alt)
+
+
 lemma le_imp_lt: "i \<le>s 2 ^ 31 - 2 \<Longrightarrow> (i::word32) <s 2 ^ 31 - 1"
   by (simp add: word_sle_eq word_sless_alt)
 
@@ -294,7 +296,7 @@ definition mult_end_pre :: "precondition" where
   )"
 
 definition mult_post :: "postcondition" where
-  "mult_post = (\<lambda>s v. \<exists>a b.
+  "mult_post = (\<lambda>s s' v. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> v = Some (vi32 (a * b))
@@ -310,6 +312,10 @@ definition mult_post :: "postcondition" where
 definition mult_function :: llvm_function where
   "mult_function = (func i32
     [
+      (lid ''a'', i32),
+      (lid ''b'', i32)
+    ]
+    [
       (lid ''entry'',    mult_entry),
       (lid ''for.cond'', mult_cond),
       (lid ''for.body'', mult_body),
@@ -319,17 +325,133 @@ definition mult_function :: llvm_function where
   )"
 
 definition mult_program :: llvm_program where
-  "mult_program \<equiv> (program [(gid ''mult'', mult_function)])"
+  "mult_program \<equiv> [
+    (gid ''mult'', mult_function)
+  ]"
+definition mult_annotations :: annotations where
+  "mult_annotations \<equiv>
+    [
+      (gid ''mult'',
+        (
+          mult_pre,
+          [
+            ((lid ''for.cond'', lid ''for.body''), mult_body_pre),
+            ((lid ''for.cond'', lid ''for.end'' ), mult_end_pre)
+          ],
+          mult_post
+        )
+      )
+    ]"
 
+
+lemma "\<exists>a. ((register_\<alpha> s)
+        (reg (lid ''a.addr'') \<mapsto> addr aa, reg (lid ''b.addr'') \<mapsto> addr ab, reg (lid ''result'') \<mapsto> addr ac,
+           reg (lid ''i'') \<mapsto> addr ad))
+        (reg (lid ''a.addr'')) =
+       Some (addr a)" by simp
 
 lemma mult_floyd:
-  "floyd_vc
+  "verify_program
     mult_program
-    [(gid ''mult'', ([
-      ((None, lid ''entry''),   mult_pre),
-      ((Some (lid ''for.cond''), lid ''for.body''),mult_body_pre),
-      ((Some (lid ''for.cond''), lid ''for.end''), mult_end_pre)
-    ], mult_post))]"
+    mult_program
+    mult_annotations"
+  apply (subst mult_program_def) apply simp
+  apply (subst (3) mult_annotations_def) apply (simp del: split_paired_All) apply (intro conjI)
+     apply (subst first_label_def, subst mult_function_def, simp)
+    apply (intro allI impI)
+  subgoal for s
+    apply (subst floyd_cond_def)
+    apply (subst first_label_def)
+    apply (subst mult_function_def)
+    apply simp
+    apply (rule wp_annotated_step_intro)
+    apply (rule wp_step_intro)
+      apply (subst mult_program_def)
+      apply simp
+     apply (subst mult_function_def)
+     apply simp
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (subst mult_entry_def)
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp defer apply simp
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp defer apply simp
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp defer apply simp
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp defer apply simp
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (unfold mult_pre_def) apply clean_assms
+    apply (intro wp_intro) apply simp apply simp apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply simp apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply simp apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply simp apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro)
+     apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros)
+    apply (rule wp_rc_steps_i_intro) defer apply simp apply (simp (no_asm))
+    apply (thin_tac "_ \<nexists>\<rightarrow>\<^sub>i")
+     apply (rule wp_steps_until_intro)
+      apply (subst (asm) has_annotation_def)
+      apply (subst (asm) mult_program_def)
+      apply (subst (asm) mult_annotations_def)
+    apply simp
+    apply (thin_tac "\<not>has_annotation _ _ _")
+     apply (rule wp_step_intro)
+       apply (subst mult_program_def) apply simp
+      apply (subst mult_function_def) apply simp
+    apply (rule wp_rc_steps_i_intro) apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (subst mult_cond_def)
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply simp apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro) apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply fastforce apply simp defer apply simp apply clean_assms
+    apply (rule wp_rc_steps_i_intro) apply simp
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (intro wp_step_i_intros) apply auto[5] apply (thin_tac "\<not>is_call _")
+    apply (intro wp_intro) apply simp apply fastforce apply simp apply simp defer apply simp apply (simp only: compare_values_32.simps) apply clean_assms
+    apply (rule wp_rc_steps_i_intro) apply simp 
+    apply (intro wp_step_i_intros) apply simp defer apply simp 
+    apply (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)")
+    apply (rule wp_rc_steps_i_intro) defer apply simp apply (simp (no_asm))
+    apply (rule wp_steps_until_intro) defer 
+      apply (subst (asm) has_annotation_def)
+      apply (subst (asm) mult_program_def)
+      apply (subst (asm) mult_annotations_def) apply simp
+    apply (thin_tac "has_annotation _ _ _")
+    apply (subst annotation_holds_def) apply (subst mult_annotations_def) apply (subst mult_program_def) apply (simp (no_asm))
+    apply (thin_tac "_ \<nexists>\<rightarrow>\<^sub>i")
+    unfolding mult_body_pre_def by auto
   including word_bundle
   apply (unfold_floyd func_def: mult_function_def prog_def: mult_program_def)
 

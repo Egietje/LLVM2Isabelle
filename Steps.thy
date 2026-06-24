@@ -32,7 +32,7 @@ fun prepare_state :: "state \<Rightarrow> (llvm_identifier * llvm_type) list \<R
   "prepare_state s ps vs = assign_params ps vs s (push_frame s)"
 fun restore_state :: "state \<Rightarrow> state \<Rightarrow> llvm_value option \<Rightarrow> llvm_identifier option \<Rightarrow> state result" where
   "restore_state s s' None None = ok (pop_frame s s')"
-| "restore_state s s' (Some v) (Some n) = do {s'' \<leftarrow> return (pop_frame s s'); set_register n v s'' }"
+| "restore_state s s' (Some v) (Some n) = set_register n v (pop_frame s s')"
 | "restore_state s s' (Some _) None = ok (pop_frame s s')"
 | "restore_state _ _ _ _ = err no_return_value"
 
@@ -353,11 +353,10 @@ definition "wp_steps_f s Q \<equiv> \<forall>s'. terminates_to_f s s' \<longrigh
 
 section "Annotations"
 
-type_synonym function_precondition = "state \<Rightarrow> bool"
-type_synonym function_postcondition = "state \<Rightarrow> state \<Rightarrow> llvm_value option \<Rightarrow> bool"
-type_synonym block_precondition = "state \<Rightarrow> bool"
-type_synonym block_preconditions = "((llvm_identifier * llvm_identifier) * block_precondition) list"
-type_synonym annotations = "(llvm_identifier * (function_precondition * block_preconditions * function_postcondition)) list"
+type_synonym precondition = "state \<Rightarrow> bool"
+type_synonym postcondition = "state \<Rightarrow> state \<Rightarrow> llvm_value option \<Rightarrow> bool"
+type_synonym block_preconditions = "((llvm_identifier * llvm_identifier) * precondition) list"
+type_synonym annotations = "(llvm_identifier * (precondition * block_preconditions * postcondition)) list"
 
 context
   fixes annotations :: "annotations"
@@ -813,6 +812,150 @@ abbreviation annotated_steps :: "function_state \<Rightarrow> function_state \<R
 definition wp_step where
   "wp_step fs Q \<equiv> (\<forall>fs'. step_f_replaced_calls fs fs' \<longrightarrow> \<not>is_errf fs' \<and> Q fs')"
 
+definition wp_rc_steps_i where
+  "wp_rc_steps_i s Q \<equiv> (\<forall>s'. (step_i_replaced_calls\<^sup>*\<^sup>* s s' \<and> s' \<nexists>\<rightarrow>\<^sub>i) \<longrightarrow> (\<not>is_erri s' \<and> Q s'))"
+definition wp_rc_step_i where
+  "wp_rc_step_i s Q \<equiv> (\<forall>s'. (step_i_replaced_calls s s') \<longrightarrow> (\<not>is_erri s' \<and> Q s'))"
+
+lemma wp_rc_steps_i_intro:
+  assumes "s \<nexists>\<rightarrow>\<^sub>i \<Longrightarrow> \<not>is_erri s \<and> Q s"
+  assumes "\<not>s \<nexists>\<rightarrow>\<^sub>i \<Longrightarrow> wp_rc_step_i s (\<lambda>s'. wp_rc_steps_i s' Q)"
+  shows "wp_rc_steps_i s Q"
+  unfolding wp_rc_steps_i_def
+  apply (intro allI impI, elim conjE)
+  subgoal for s'
+    using assms apply (rotate_tac 0)
+    apply (induction rule: converse_rtranclp_induct) apply blast
+    unfolding wp_rc_step_i_def
+    by (smt (verit) Steps.step_i_replaced_calls.simps terminal_state_simps(3) wp_rc_steps_i_def)
+  done
+
+lemma wp_step_intro:
+  assumes "map_of program f = Some fu"
+  assumes "map_of (llvm_function.blocks fu) lab = Some b"
+  assumes "wp_rc_steps_i
+            (execi prev b s)
+            (\<lambda>si'.
+              (case si' of
+                flowi s' br \<Rightarrow>
+                  (case br of
+                    branch_label l \<Rightarrow> Q (branchf s' (Some lab) l f)
+                  | return_value v \<Rightarrow> Q (retf s' v f)
+                  )
+              | _ \<Rightarrow> False
+              )
+            )"
+  shows "wp_step (branchf s prev lab f) Q"
+  unfolding wp_step_def
+  apply (intro allI impI)
+  apply (cases rule: step_f_replaced_calls.cases)
+  using assms
+  unfolding wp_rc_steps_i_def
+  by auto
+
+
+
+named_theorems wp_step_i_intros
+lemma wp_step_i_br_label_intro[wp_step_i_intros]:
+  assumes "Q (flowi s (branch_label l))"
+  shows "wp_rc_step_i (execi pre ([],[],br_label l) s) Q"
+  using assms
+  unfolding wp_rc_step_i_def
+  apply (intro allI impI)
+  using step_i_replaced_calls.simps
+  by simp
+lemma wp_step_i_br_i1_intro[wp_step_i_intros]:
+  assumes "register_\<alpha> s b = Some (vi1 bool)"
+  assumes "bool \<Longrightarrow> Q (flowi s (branch_label l1))"
+  assumes "\<not>bool \<Longrightarrow> Q (flowi s (branch_label l2))"
+  shows "wp_rc_step_i (execi pre ([],[],br_i1 b l1 l2) s) Q"
+  using assms
+  unfolding wp_rc_step_i_def
+  apply (intro allI impI)
+  using step_i_replaced_calls.simps register_\<alpha>_eq_get_register
+  by (cases bool; fastforce) \<comment> \<open> Takes a bit... \<close>
+lemma wp_step_i_ret_None_intro[wp_step_i_intros]:
+  assumes "Q (flowi s (return_value None))"
+  shows "wp_rc_step_i (execi pre ([],[],ret None) s) Q"
+  using assms
+  unfolding wp_rc_step_i_def
+  apply (intro allI impI)
+  using step_i_replaced_calls.simps
+  by simp
+lemma wp_step_i_ret_value_intro[wp_step_i_intros]:
+  assumes "register_\<alpha> s v = Some v'"
+  assumes "Q (flowi s (return_value (Some v')))"
+  shows "wp_rc_step_i (execi pre ([],[],ret (Some (t,v))) s) Q"
+  using assms
+  unfolding wp_rc_step_i_def
+  apply (intro allI impI)
+  using step_i_replaced_calls.simps register_\<alpha>_eq_get_register
+  by simp
+lemma wp_step_i_phi_intro[wp_step_i_intros]:
+  assumes "wp (execute_phi pre p s) (\<lambda>s'. Q (execi pre (ps,is,ter) s'))"
+  shows "wp_rc_step_i (execi pre (p#ps,is,ter) s) Q"
+proof -
+  obtain s' where "execute_phi pre p s = ok s'"
+    using assms unfolding wp_gen_def by (auto split: result.splits)
+  then have "Q (execi pre (ps,is,ter) s')" using assms unfolding wp_gen_def by simp
+  then show ?thesis
+    unfolding wp_rc_step_i_def using step_i_replaced_calls.simps \<open>execute_phi pre p s = ok s'\<close>
+    by force
+qed
+lemma wp_step_i_instr_intro[wp_step_i_intros]:
+  assumes "is_call i \<Longrightarrow> i = call na ty f p"
+  assumes "is_call i \<Longrightarrow> map_of program f = Some fu"
+  assumes "is_call i \<Longrightarrow> first_label fu = Some b"
+  assumes "is_call i \<Longrightarrow> map_of annotations f = Some (fpre,bpres,fpost)"
+  assumes "is_call i \<Longrightarrow> wp (prepare_state s (params fu) p) (\<lambda>s'. fpre s' \<and> (\<forall>s'' v'. fpost s' s'' v' \<longrightarrow> wp (restore_state s s'' v' na) (\<lambda>s'''. Q (execi pre ([],is,ter) s''') )))"
+  assumes "\<not>is_call i \<Longrightarrow> wp (execute_instruction i s) (\<lambda>s'. Q (execi pre ([],is,ter) s'))"
+  shows "wp_rc_step_i (execi pre ([],i#is,ter) s) Q"
+  unfolding wp_rc_step_i_def apply (intro allI impI) subgoal premises prems for si'
+proof (cases "is_call i")
+  case True
+
+  have step: "step_i_replaced_calls (execi pre ([],(call na ty f p)#is,ter) s) si'"
+    using True assms prems
+    by blast
+
+  obtain sprep where
+    prepok: "prepare_state s (params fu) p = ok sprep" and
+    preholds: "fpre sprep" 
+    using assms prems True
+    unfolding wp_gen_def
+    by (auto split: result.splits)
+
+  obtain s'' v' s''' where
+    postholds: "fpost sprep s'' v'" and
+    restok: "restore_state s s'' v' na = ok s'''" and
+    si_eq: "si' = (execi pre ([],is,ter) s''')"
+    using step True assms prepok preholds
+    apply (cases rule: step_i_replaced_calls.cases; (simp del: split_paired_All))
+    unfolding wp_gen_def
+    apply (simp del: split_paired_All split: result.splits)
+    by blast
+
+  have "Q (execi pre ([],is,ter) s''')" 
+    using step True assms prepok preholds postholds restok
+    unfolding wp_gen_def
+    apply (simp del: split_paired_All)
+    apply (erule allE[where x=s''])
+    by auto
+
+  then show ?thesis using si_eq
+    by simp
+next
+  case False
+  then obtain s' where "execute_instruction i s = ok s'"
+    using assms unfolding wp_gen_def by (auto split: result.splits)
+  then have "Q (execi pre ([],is,ter) s')" using assms False unfolding wp_gen_def by simp
+  then show ?thesis
+    unfolding wp_rc_step_i_def using step_i_replaced_calls.simps \<open>execute_instruction i s = ok s'\<close> False prems
+    by force \<comment> \<open> Takes a bit... \<close>
+qed
+  done
+
+
 definition wp_steps_until where
   "wp_steps_until fs Q \<equiv> (\<forall>fs'. step_until\<^sup>*\<^sup>* fs fs' \<and> \<not>is_errf fs \<longrightarrow> \<not>is_errf fs') \<and> (\<forall>fs'. (step_until)\<^sup>*\<^sup>* fs fs' \<and> has_annotation fs' \<longrightarrow> Q fs')"
 
@@ -853,6 +996,16 @@ lemma wp_annotated_step_intro:
   using assms
   unfolding wp_annotated_step_def wp_step_def wp_steps_until_def annotated_step_def
   by blast
+
+lemma wp_steps_until_intro:
+  assumes "has_annotation fs \<Longrightarrow> Q fs"
+  assumes "\<not>has_annotation fs \<Longrightarrow> wp_step fs (\<lambda>fs'. wp_steps_until fs' Q)"
+  shows "wp_steps_until fs Q"
+  using assms
+  unfolding wp_steps_until_def wp_step_def
+  apply (cases "has_annotation fs")
+  using step_until_def converse_rtranclpE
+  by metis+
 
 lemma annotation_holds_impl_annotation_holds_single_step:
   assumes "floyd_vc"
@@ -1148,69 +1301,76 @@ lemma
   by (metis function_state.sel(1) )
 
 
-fun verify_first_block where
-  "verify_first_block p a fpre l f = (\<forall>s. fpre s [] \<longrightarrow> floyd_cond p a s s None l f)"
-
-fun verify_blocks :: "llvm_program \<Rightarrow> annotations \<Rightarrow> block_preconditions \<Rightarrow> function_precondition \<Rightarrow> function_postcondition \<Rightarrow> llvm_identifier \<Rightarrow> bool"  where
+fun verify_blocks :: "llvm_program \<Rightarrow> annotations \<Rightarrow> block_preconditions \<Rightarrow> precondition \<Rightarrow> postcondition \<Rightarrow> llvm_identifier \<Rightarrow> bool" where
   "verify_blocks _ _ [] _ _ _ = True"
-| "verify_blocks p a (((prev,lab),precond)#bpres) fpre fpost f = ((\<forall>sinit s. (fpre sinit \<and> precond s) \<longrightarrow> floyd_cond p a sinit s (Some prev) lab f) \<and> verify_blocks p a bpres fpre fpost f)"
+| "verify_blocks p a (((prev, lab), precond) # bpres) fpre fpost f = 
+    ((\<forall>s_init s. annotation_holds p a s_init (branchf s (Some prev) lab f) \<longrightarrow> floyd_cond p a s_init s (Some prev) lab f) 
+     \<and> verify_blocks p a bpres fpre fpost f)"
 
 fun verify_function where
   "verify_function program annotations fl fb =
-      (case map_of annotations fl of
-      None \<Rightarrow> False 
-    | Some (fpre, bpres, fpost) \<Rightarrow> (
-        (first_label fb \<noteq> None) \<and> 
-        (\<forall>init_state. fpre init_state \<longrightarrow> 
-           floyd_cond program annotations init_state init_state None (the (first_label fb)) fl) \<and>
-        (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
-           (\<forall>s_init s. annotation_holds program annotations s_init (branchf s (Some pred) l fl) \<longrightarrow> 
-              floyd_cond program annotations s_init s (Some pred) l fl)
-        ))
-    )"
+     (case map_of annotations fl of
+        None \<Rightarrow> False 
+      | Some (fpre, bpres, fpost) \<Rightarrow> 
+          (first_label fb \<noteq> None \<and> 
+           (\<forall>init_state. fpre init_state \<longrightarrow> floyd_cond program annotations init_state init_state None (the (first_label fb)) fl) \<and>
+           verify_blocks program annotations bpres fpre fpost fl))"
 
 fun verify_program where
   "verify_program []           p a = True"
 | "verify_program ((fl,fb)#fs) p a = (verify_function p a fl fb \<and> verify_program fs p a)"
 
-
-lemma
-  assumes "verify_program p p' a"
-  assumes "p = p'"
-  shows "\<forall>f. (map_of p f \<noteq> None) \<longrightarrow> 
-    (case map_of a f of
-      None \<Rightarrow> False 
-    | Some (fpre, bpres, fpost) \<Rightarrow> (
-        (first_label (the (map_of p f)) \<noteq> None) \<and> 
-        (\<forall>init_state. fpre init_state \<longrightarrow> 
-           floyd_cond p a init_state init_state None (the (first_label (the (map_of p f)))) f) \<and>
-        (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
-           (\<forall>s_init s. annotation_holds p a s_init (branchf s (Some pred) l f) \<longrightarrow> 
-              floyd_cond p a s_init s (Some pred) l f)
-        ))
-    )"
+lemma verify_program_members:
+  assumes "verify_program fs p a"
+  assumes "(fl, fb) \<in> set fs"
+  shows "verify_function p a fl fb"
   using assms
-  apply (induction p arbitrary: p')
-  subgoal by simp
-  subgoal for f fs fs'
-    apply (cases f)
-    subgoal for fl fb
-      apply (intro allI)
-      subgoal for fl'
-        apply (cases "fl = fl'")
-          subgoal
-            by (auto split: option.splits)
-            apply (auto split: option.splits) sledgehammer sorry
-definition floyd_vc :: "bool" where
-  "floyd_vc \<equiv> \<forall>f. (map_of program f \<noteq> None) \<longrightarrow> 
-    (case map_of annotations f of
-      None \<Rightarrow> False 
-    | Some (fpre, bpres, fpost) \<Rightarrow> (
-        (first_label (the (map_of program f)) \<noteq> None) \<and> 
-        (\<forall>init_state. fpre init_state [] \<longrightarrow> 
-           floyd_cond init_state init_state None (the (first_label (the (map_of program f)))) f) \<and>
-        (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
-           (\<forall>s_init s. annotation_holds s_init (branchf s (Some pred) l f) \<longrightarrow> 
-              floyd_cond s_init s (Some pred) l f)
-        ))
-    )"
+  by (induction fs) auto
+
+
+
+lemma verify_blocks_imp_floyd_cond:
+  assumes "verify_blocks p a bpres fpre fpost f"
+  assumes "map_of bpres (pred, l) = Some precond"
+  assumes "annotation_holds p a s_init (branchf s (Some pred) l f)"
+  shows "floyd_cond p a s_init s (Some pred) l f"
+  using assms
+proof (induction bpres)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons pair bpres)
+  obtain prev lab pc where pair_def: "pair = ((prev, lab), pc)" apply (cases pair) by fast
+  then show ?case
+    using Cons
+    apply (auto split: if_splits ) 
+    using Cons verify_blocks.simps by fast
+qed
+
+
+lemma verify_program_impl_floyd_vc:
+  assumes "verify_program program program annotations"
+  shows "floyd_vc program annotations"
+  unfolding floyd_vc_def
+  apply (intro allI impI)
+  subgoal for f
+    apply (cases "map_of program f")
+     apply simp
+    subgoal premises prems for fu
+    proof -
+      have f_in_set: "(f, fu) \<in> set program"
+        using map_of_SomeD prems
+        by fast
+
+      have "verify_function program annotations f fu"
+        using assms f_in_set verify_program_members by blast
+
+      then show ?thesis 
+        using prems f_in_set
+        apply (simp split: option.splits del: split_paired_All)
+        apply (intro conjI) apply blast apply (elim conjE) using verify_blocks_imp_floyd_cond by blast
+    qed
+    done
+  done
+
+end
