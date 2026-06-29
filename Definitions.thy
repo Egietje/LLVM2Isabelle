@@ -15,6 +15,10 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address 
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
 datatype llvm_identifier = is_lid: lid string | gid string
+abbreviation local_id :: "string \<Rightarrow> llvm_identifier" ( "%_") where
+  "local_id n \<equiv> lid n"
+abbreviation global_id :: "string \<Rightarrow> llvm_identifier" ( "@_") where
+  "global_id n \<equiv> gid n"
 
 datatype llvm_value_ref = reg llvm_identifier | val llvm_value
 

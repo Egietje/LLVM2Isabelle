@@ -1,5 +1,5 @@
 theory Steps
-  imports Blocks
+  imports Instructions
 begin
 
 context fixes program :: "llvm_program"
@@ -38,7 +38,7 @@ fun restore_state :: "state \<Rightarrow> state \<Rightarrow> llvm_value option 
 
 lemma wp_assign_params_intro:
   assumes "register_\<alpha> s v = Some va" "is_lid n"
-  assumes "\<And>s''. register_\<alpha> s'' = (register_\<alpha> s')(reg n := Some va) \<Longrightarrow> wp (assign_params ps vs s s'') Q"
+  assumes "\<And>s''. register_\<alpha> s'' = (register_\<alpha> s')(reg n := Some va) \<Longrightarrow> memory_\<alpha> s'' = memory_\<alpha> s' \<Longrightarrow> wp (assign_params ps vs s s'') Q"
   shows "wp (assign_params ((n,t)#ps) ((t',v)#vs) s s') Q"
   apply simp apply (intro wp_intro) using assms by auto
 
@@ -46,6 +46,15 @@ lemma wp_assign_params_empty_intro:
   assumes "Q s'"
   shows "wp (assign_params [] [] s s') Q"
   using assms by simp
+
+lemma wp_restore_state_intro:
+  assumes "\<And>n. rn = Some n \<Longrightarrow> rv = Some v"
+  assumes "\<And>n. rn = Some n \<Longrightarrow> wp (set_register n v (pop_frame s s')) Q"
+  assumes "rn = None   \<Longrightarrow> wp (ok (pop_frame s s')) Q"
+  shows "wp (restore_state s s' rv rn) Q"
+  using assms
+  unfolding wp_gen_def
+  by (cases rn; cases rv; simp)
 
 inductive
   step_i :: "instruction_state \<Rightarrow> instruction_state \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>i" 50)
@@ -355,7 +364,7 @@ section "Annotations"
 
 type_synonym precondition = "state \<Rightarrow> bool"
 type_synonym postcondition = "state \<Rightarrow> state \<Rightarrow> llvm_value option \<Rightarrow> bool"
-type_synonym block_preconditions = "((llvm_identifier * llvm_identifier) * precondition) list"
+type_synonym block_preconditions = "((llvm_identifier * llvm_identifier) * (state \<Rightarrow> state \<Rightarrow> bool)) list"
 type_synonym annotations = "(llvm_identifier * (precondition * block_preconditions * postcondition)) list"
 
 context
@@ -772,13 +781,13 @@ definition "has_annotation fs \<equiv>
     )
   )"
 
-definition "annotation_holds s_init fs \<equiv>
+definition "annotation_holds init fs \<equiv>
   (case fs of
     errf \<Rightarrow> False
   | retf s v f \<Rightarrow> 
       (case map_of annotations f of 
         None \<Rightarrow> False
-      | Some (fpre, bpres, fpost) \<Rightarrow> map_of program f \<noteq> None \<and> fpost s_init s v
+      | Some (fpre, bpres, fpost) \<Rightarrow> map_of program f \<noteq> None \<and> fpre init \<and> fpost init s v
       )
   | branchf s p l f \<Rightarrow> (case map_of program f of
       None \<Rightarrow> False
@@ -789,11 +798,11 @@ definition "annotation_holds s_init fs \<equiv>
           (case p of
             None \<Rightarrow> (case first_label fu of
               None \<Rightarrow> False
-            | Some lab \<Rightarrow> l = lab \<and> s = s_init \<and> fpre s)
+            | Some lab \<Rightarrow> l = lab \<and> fpre s \<and> s = init)
           | Some prev \<Rightarrow> 
               (case map_of bpres (prev, l) of
                 None \<Rightarrow> False
-              | Some pre \<Rightarrow> pre s
+              | Some pre \<Rightarrow> fpre init \<and> pre init s
               )
           )
       )
@@ -962,21 +971,25 @@ definition wp_steps_until where
 definition wp_annotated_step where
   "wp_annotated_step fs Q \<equiv> (\<forall>fs'. ((fs \<Rightarrow> fs') \<longrightarrow> (\<not>is_errf fs' \<and> Q fs')))"
 
-definition "floyd_cond s_init s p l f \<equiv> wp_annotated_step (branchf s p l f) (\<lambda>fs'. annotation_holds s_init fs')"
+definition "floyd_cond init s p l f \<equiv> wp_annotated_step (branchf s p l f) (\<lambda>fs'. annotation_holds init fs')"
 
 definition floyd_vc :: "bool" where
   "floyd_vc \<equiv> \<forall>f. (map_of program f \<noteq> None) \<longrightarrow> 
     (case map_of annotations f of
       None \<Rightarrow> False 
     | Some (fpre, bpres, fpost) \<Rightarrow> (
-        (first_label (the (map_of program f)) \<noteq> None) \<and> 
-        (\<forall>init_state. fpre init_state \<longrightarrow> 
-           floyd_cond init_state init_state None (the (first_label (the (map_of program f)))) f) \<and>
-        (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
-           (\<forall>s_init s. annotation_holds s_init (branchf s (Some pred) l f) \<longrightarrow> 
-              floyd_cond s_init s (Some pred) l f)
-        ))
+        (first_label (the (map_of program f)) \<noteq> None) \<and>
+        (\<forall>init. fpre init \<longrightarrow> (
+            floyd_cond init init None (the (first_label (the (map_of program f)))) f
+          \<and> (\<forall>pred l. map_of bpres (pred, l) \<noteq> None \<longrightarrow> 
+              (\<forall>s. annotation_holds init (branchf s (Some pred) l f) \<longrightarrow> 
+                floyd_cond init s (Some pred) l f)
+            )
+          )
+        )
+      )
     )"
+
 
 
 
@@ -1009,9 +1022,9 @@ lemma wp_steps_until_intro:
 
 lemma annotation_holds_impl_annotation_holds_single_step:
   assumes "floyd_vc"
-  assumes "annotation_holds sinit sf"
+  assumes "annotation_holds init sf"
   assumes "sf \<Rightarrow> sf'"
-  shows "annotation_holds sinit sf'"
+  shows "annotation_holds init sf'"
   apply (cases sf) 
   subgoal for s p l f
     using assms(2)
@@ -1035,11 +1048,6 @@ lemma annotation_holds_impl_annotation_holds_single_step:
           unfolding annotation_holds_def
           by auto
 
-        have s_eq_sinit: "s = sinit" 
-          using assms(2) prems(1,3,4) None firstlab
-          unfolding annotation_holds_def
-          by simp
-
         show ?thesis
           using assms(1)
           unfolding floyd_vc_def
@@ -1053,11 +1061,15 @@ lemma annotation_holds_impl_annotation_holds_single_step:
             apply (cases annots)
             apply (simp del: split_paired_All)
             subgoal for fpre' bpres' fpost'
+              apply (erule allE[where x=init]) apply (erule impE)
+                subgoal
+                  using assms(2) None prems
+                  unfolding annotation_holds_def
+                  by auto
               apply (erule conjE)
-              apply (erule allE[where x=s])
-              apply (erule impE) using preholds prems apply fastforce
               unfolding floyd_cond_def
-              using None firstlab assms(3) prems(1,3) wp_annotated_step_def s_eq_sinit
+              using None firstlab assms prems
+              unfolding wp_annotated_step_def annotation_holds_def
               by auto
             done
           done
@@ -1076,8 +1088,13 @@ lemma annotation_holds_impl_annotation_holds_single_step:
             apply (cases annots)
             apply (simp del: split_paired_All)
             subgoal for fpre' bpres' fpost'
+              apply (erule allE[where x=init]) apply (erule impE)
+                subgoal
+                  using assms(2) Some prems
+                  unfolding annotation_holds_def
+                  by (auto split: option.splits)
               apply (erule conjE)
-              apply (erule allE[where x=s]) apply (thin_tac "fpre' s \<longrightarrow> _")
+              apply (thin_tac "floyd_cond init init _ _ _")
               apply (erule allE[where x=pred])
               apply (erule allE[where x=l])
               apply (erule impE)
@@ -1085,7 +1102,6 @@ lemma annotation_holds_impl_annotation_holds_single_step:
                 using prems
                 unfolding annotation_holds_def
                 by (simp split: option.splits)
-              apply (erule allE[where x=sinit])
               apply (erule allE[where x=s])
               unfolding floyd_cond_def
               using assms(2,3) prems(1) wp_annotated_step_def
@@ -1108,8 +1124,8 @@ lemma annotation_holds_impl_annotation_holds_single_step:
 lemma annotation_holds_impl_annotation_holds_multi_step:
   assumes "sf \<Rightarrow>* sf'"
   assumes "floyd_vc"
-  assumes "annotation_holds sinit sf"
-  shows "annotation_holds sinit sf'"
+  assumes "annotation_holds init sf"
+  shows "annotation_holds init sf'"
   using assms
   apply (induction rule: rtranclp_induct)
    apply blast
@@ -1198,7 +1214,7 @@ lemma floyd_vc_impl_call_vc:
     apply (intro impI)
     apply (elim conjE)
     unfolding wp_func_replaced_calls_def
-    apply (intro allI impI)
+    apply (intro allI impI) apply (erule conjE)
     subgoal premises prems for s'
     proof -
       have rc_path: "step_f_replaced_calls\<^sup>*\<^sup>* (branchf s None l f) s'"
@@ -1265,8 +1281,8 @@ lemma floyd_vc_impl_call_vc:
       then show ?thesis apply (cases s')
         using s'_ter terminal_state_simps(6) apply blast defer unfolding annotation_holds_def apply simp apply (auto split: option.splits)
         unfolding wp_steps_f_post_def
-        by (metis (no_types, lifting) annotated_step_keeps_function_ret function_state.disc(8)
-            function_state.sel(1,2,6) option.inject prems(2,5) prod.inject)
+        by (metis (no_types, opaque_lifting) Steps.annotated_step_keeps_function_ret function_state.disc(8) function_state.sel(1,2,6) old.prod.inject option.inject
+            prems(2,4,5) push_frame.cases)
     qed
     done
   done
@@ -1301,39 +1317,43 @@ lemma
   by (metis function_state.sel(1) )
 
 
-fun verify_blocks :: "llvm_program \<Rightarrow> annotations \<Rightarrow> block_preconditions \<Rightarrow> precondition \<Rightarrow> postcondition \<Rightarrow> llvm_identifier \<Rightarrow> bool" where
-  "verify_blocks _ _ [] _ _ _ = True"
-| "verify_blocks p a (((prev, lab), precond) # bpres) fpre fpost f = 
-    ((\<forall>s_init s. annotation_holds p a s_init (branchf s (Some prev) lab f) \<longrightarrow> floyd_cond p a s_init s (Some prev) lab f) 
-     \<and> verify_blocks p a bpres fpre fpost f)"
+fun verify_blocks :: "llvm_program \<Rightarrow> annotations \<Rightarrow> block_preconditions \<Rightarrow> llvm_identifier \<Rightarrow> state \<Rightarrow> bool" where
+  "verify_blocks _ _ [] _ _ = True"
+| "verify_blocks p a (((prev, lab), precond) # bpres) f init = 
+    ((\<forall>s. annotation_holds p a init (branchf s (Some prev) lab f) \<longrightarrow> floyd_cond p a init s (Some prev) lab f) 
+     \<and> verify_blocks p a bpres f init)"
 
-fun verify_function where
-  "verify_function program annotations fl fb =
-     (case map_of annotations fl of
+fun verify_function :: "llvm_program \<Rightarrow> annotations \<Rightarrow> llvm_identifier \<Rightarrow> llvm_function \<Rightarrow> bool" where
+  "verify_function p a fl fb =
+     (case map_of a fl of
         None \<Rightarrow> False 
       | Some (fpre, bpres, fpost) \<Rightarrow> 
           (first_label fb \<noteq> None \<and> 
-           (\<forall>init_state. fpre init_state \<longrightarrow> floyd_cond program annotations init_state init_state None (the (first_label fb)) fl) \<and>
-           verify_blocks program annotations bpres fpre fpost fl))"
+           (\<forall>init. fpre init \<longrightarrow> 
+              floyd_cond p a init init None (the (first_label fb)) fl \<and> 
+              verify_blocks p a bpres fl init)))"
 
-fun verify_program where
-  "verify_program []           p a = True"
-| "verify_program ((fl,fb)#fs) p a = (verify_function p a fl fb \<and> verify_program fs p a)"
+fun verify_program' :: "llvm_program \<Rightarrow> llvm_program \<Rightarrow> annotations \<Rightarrow> bool" where
+  "verify_program' [] _ _ = True"
+| "verify_program' ((fl, fb) # fs) p a = (verify_function p a fl fb \<and> verify_program' fs p a)"
+
+fun verify_program :: "llvm_program \<Rightarrow> annotations \<Rightarrow> bool" where
+  "verify_program p a = verify_program' p p a"
+
 
 lemma verify_program_members:
-  assumes "verify_program fs p a"
+  assumes "verify_program' fs p a"
   assumes "(fl, fb) \<in> set fs"
   shows "verify_function p a fl fb"
   using assms
   by (induction fs) auto
 
 
-
 lemma verify_blocks_imp_floyd_cond:
-  assumes "verify_blocks p a bpres fpre fpost f"
+  assumes "verify_blocks p a bpres f init"
   assumes "map_of bpres (pred, l) = Some precond"
-  assumes "annotation_holds p a s_init (branchf s (Some pred) l f)"
-  shows "floyd_cond p a s_init s (Some pred) l f"
+  assumes "annotation_holds p a init (branchf s (Some pred) l f)"
+  shows "floyd_cond p a init s (Some pred) l f"
   using assms
 proof (induction bpres)
   case Nil
@@ -1343,13 +1363,13 @@ next
   obtain prev lab pc where pair_def: "pair = ((prev, lab), pc)" apply (cases pair) by fast
   then show ?case
     using Cons
-    apply (auto split: if_splits ) 
+    apply (auto split: if_splits) 
     using Cons verify_blocks.simps by fast
 qed
 
 
 lemma verify_program_impl_floyd_vc:
-  assumes "verify_program program program annotations"
+  assumes "verify_program' program program annotations"
   shows "floyd_vc program annotations"
   unfolding floyd_vc_def
   apply (intro allI impI)
@@ -1372,5 +1392,11 @@ lemma verify_program_impl_floyd_vc:
     qed
     done
   done
+
+lemma verify_program_impl_global_vc:
+  assumes "verify_program program annotations"
+  shows "global_verification_condition program annotations"
+  using assms verify_program_impl_floyd_vc floyd_vc_impl_global_vc
+  by simp
 
 end

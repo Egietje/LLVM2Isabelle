@@ -24,7 +24,7 @@ definition execute_alloca :: "llvm_identifier \<Rightarrow> state \<Rightarrow> 
 
 lemma alloca_wp_intro[THEN consequence, wp_intro]:
   assumes "is_lid name"
-  shows "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr a)) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None))"
+  shows "wp (execute_alloca name s) (\<lambda>s'. \<exists>a. (register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (addr (saddr a))) \<and> memory_\<alpha> s' = (memory_\<alpha> s)(saddr a := Some mem_unset) \<and> memory_\<alpha> s (saddr a) = None))"
   using assms
   unfolding execute_alloca_def
   by (intro wp_intro; auto)
@@ -155,6 +155,18 @@ lemma add64_wp_intro[THEN consequence, wp_intro]:
 
 section "Compare instruction"
 
+fun compare_values_1 :: "llvm_compare_condition \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> llvm_value" where
+  "compare_values_1 comp_eq  a b = vi1 (a = b)"
+| "compare_values_1 comp_ne  a b = vi1 (a \<noteq> b)"
+| "compare_values_1 comp_ugt a b = vi1 (a \<and> (\<not>b))"
+| "compare_values_1 comp_uge a b = vi1 (a \<or> (\<not>b))"
+| "compare_values_1 comp_ult a b = vi1 ((\<not>a) \<and> b)"
+| "compare_values_1 comp_ule a b = vi1 ((\<not>a) \<or> b)"
+| "compare_values_1 comp_sgt a b = vi1 ((\<not>a) \<and> b)"
+| "compare_values_1 comp_sge a b = vi1 ((\<not>a) \<or> b)"
+| "compare_values_1 comp_slt a b = vi1 (a \<and> (\<not>b))"
+| "compare_values_1 comp_sle a b = vi1 (a \<or> (\<not>b))"
+
 fun compare_values_32 :: "llvm_compare_condition \<Rightarrow> word32 \<Rightarrow> word32 \<Rightarrow> llvm_value" where
   "compare_values_32 comp_eq a b = vi1 (a = b)"
 | "compare_values_32 comp_ne a b = vi1 (a \<noteq> b)"
@@ -179,12 +191,14 @@ fun compare_values_64 :: "llvm_compare_condition \<Rightarrow> word64 \<Rightarr
 | "compare_values_64 comp_slt a b = vi1 (a <s b)"
 | "compare_values_64 comp_sle a b = vi1 (a \<le>s b)"
 
-(* TODO: support pointers *)
 fun compare_values :: "llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
-  "compare_values c (vi32 a) (vi32 b) = ok (compare_values_32 c a b)"
+  "compare_values c (vi1  a) (vi1  b) = ok (compare_values_1  c a b)"
+| "compare_values c (vi32 a) (vi32 b) = ok (compare_values_32 c a b)"
 | "compare_values c (vi64 a) (vi64 b) = ok (compare_values_64 c a b)"
 | "compare_values _ _ _ = err incompatible_types"
 
+fun same_signs1 :: "bool \<Rightarrow> bool \<Rightarrow> bool" where
+  "same_signs1 a b = (a = b)"
 fun same_signs32 :: "word32 \<Rightarrow> word32 \<Rightarrow> bool" where
   "same_signs32 a b = ((a <s 0 \<and> b <s 0) \<or> (0 \<le>s a \<and> 0 \<le>s b))"
 fun same_signs64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
@@ -192,6 +206,7 @@ fun same_signs64 :: "word64 \<Rightarrow> word64 \<Rightarrow> bool" where
 
 fun compare_values_sign :: "llvm_same_sign \<Rightarrow> llvm_compare_condition \<Rightarrow> llvm_value \<Rightarrow> llvm_value \<Rightarrow> llvm_value result" where
   "compare_values_sign False c a b = compare_values c a b"
+| "compare_values_sign True c (vi1  a) (vi1  b) = (if same_signs1  a b then compare_values c (vi1  a) (vi1  b) else ok poison)"
 | "compare_values_sign True c (vi32 a) (vi32 b) = (if same_signs32 a b then compare_values c (vi32 a) (vi32 b) else ok poison)"
 | "compare_values_sign True c (vi64 a) (vi64 b) = (if same_signs64 a b then compare_values c (vi64 a) (vi64 b) else ok poison)"
 | "compare_values_sign True c _ _ = err incompatible_types"
@@ -203,6 +218,13 @@ definition execute_icmp :: "llvm_identifier \<Rightarrow> llvm_same_sign \<Right
     res \<leftarrow> compare_values_sign same_sign cond v1' v2';
     set_register name res s
   }"
+
+lemma icmp1_wp_intro[THEN consequence, wp_intro]:
+  assumes "register_\<alpha> s v1 = Some (vi1 v1')" "register_\<alpha> s v2 = Some (vi1 v2')" "(if ss then same_signs1 v1' v2' else True)" "is_lid name"
+  shows "wp (execute_icmp name ss cond v1 v2 s) (\<lambda>s'. memory_\<alpha> s' = memory_\<alpha> s \<and> register_\<alpha> s' = (register_\<alpha> s)(reg name := Some (compare_values_1 cond v1' v2')))"
+  using assms
+  unfolding execute_icmp_def
+  by (cases ss; intro wp_intro; auto; intro wp_intro; auto)
 
 lemma icmp32_wp_intro[THEN consequence, wp_intro]:
   assumes "register_\<alpha> s v1 = Some (vi32 v1')" "register_\<alpha> s v2 = Some (vi32 v2')" "(if ss then same_signs32 v1' v2' else True)" "is_lid name"
