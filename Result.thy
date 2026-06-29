@@ -7,10 +7,10 @@ section "Definitions"
 
 subsection "Types"
 
-datatype error = unknown_register_name
-  | unallocated_address | uninitialized_address
+datatype error = unknown_register_name | invalid_address | global_register_overwrite
   | not_an_address | incompatible_types | unknown_label
   | phi_no_previous_block | phi_label_not_found | phi_label_not_distinct
+  | internal_error | unfreeable_memory | invalid_parameter_length | no_return_value
 
 datatype 'a result = ok 'a | err error
 
@@ -55,9 +55,6 @@ subsection "Monad laws"
 lemma result_monad_left_identity[simp]: "do {x'\<leftarrow>return x; f x'} = f x"
   by auto
 
-lemma result_err_propagate[simp]: "do {x \<leftarrow> err e; f x} = err e"
-  by auto
-
 lemma result_monad_right_identity[simp]: "do {x \<leftarrow> m; return x} = m"
   by (cases m; simp)
 
@@ -88,8 +85,19 @@ lemma result_bind_err_iff[simp]: "do { x\<leftarrow>m; f x } = err e \<longleftr
 lemma result_return_ok_iff[simp]: "return x = ok y \<longleftrightarrow> x = y"
   by simp
 
+lemma result_err_propagate[simp]: "do {x \<leftarrow> err e; f x} = err e"
+  by auto
+
 lemma result_let_in[simp]: "do { z \<leftarrow> (let x = y in (f x :: 'a result)); g z} = (let x = y in (do {z \<leftarrow> f x; g z }))"
   by simp
+
+lemma wp_impl_ok[simp]:
+  assumes "wp x Q"
+  shows "\<exists>v. x = ok v"
+  using assms
+  unfolding wp_gen_def
+  by (cases x; simp)
+
 
 end
 
