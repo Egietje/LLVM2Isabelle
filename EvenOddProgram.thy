@@ -351,6 +351,22 @@ return:
 }
 
 
+
+
+bool even(int n);
+
+bool odd(int n) {
+    return !even(n);
+}
+
+bool even(int n) {
+    if (n == 0) {
+        return true;
+    } else {
+        return odd(n-1);
+    }
+}
+
 *)
 
 

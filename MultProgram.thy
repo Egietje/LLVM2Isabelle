@@ -253,7 +253,7 @@ lemma mult_floyd:
     subgoal
       unfolding mult_pre_def
       by blast
-    subgoal for a b aa ba ra ia s'
+    subgoal for a b aa ba ra ia s' 
       apply (rule exI[where x=aa])
       apply (rule exI[where x=a])
       apply (rule exI[where x=ba])
