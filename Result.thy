@@ -28,10 +28,6 @@ adhoc_overloading
 
 fun assert where "assert e True = ok ()" | "assert e False = err e"
 
-fun some_or_err :: "'a option \<Rightarrow> error \<Rightarrow> 'a result" where
-  "some_or_err (Some v) _ = ok v"
-| "some_or_err None e = err e"
-
 definition wp_gen :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
   "wp_gen m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
 
@@ -139,13 +135,6 @@ lemma wp_assert_intro[wp_intro]:
   shows "wp_gen (do {assert e b; f}) P E"
   using assms
   by (auto split: result.splits simp: bind_def) 
-
-lemma wp_some_or_err_intro[wp_intro]:
-  assumes "\<And>v. x = Some v \<Longrightarrow> Q v"
-  assumes "x = None \<Longrightarrow> E e"
-  shows "wp_gen (some_or_err x e) Q E"
-  using assms
-  by (cases x; simp)
 
 lemma wp_bind_intro[wp_intro]:
   assumes "wp_gen m (\<lambda>x. wp_gen (f x) P E) E"

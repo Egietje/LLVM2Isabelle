@@ -48,20 +48,20 @@ definition even_else :: "llvm_instruction_block" where
   "even_else \<equiv> (
     [],
     [
-      load (%''1'') i32 (reg %''n.addr'') (Some 4),
+      load (%1 ) i32 (reg %n.addr ) (Some 4),
       add (%''sub'') add_nsw i32 (reg %''1'') (val (vi32 (-1))),
-      call (Some %''call'') i1 (@''odd'') [(i32, reg %''sub'')],
+      call (Some %''call'') i1 (@odd) [(i32, reg %''sub'')],
       store i1 (reg %''call'') (reg %''retval'') (Some 1)
     ],
-    br_label (%''return'')
+    br_label ( %return )
   )"
 definition even_return :: "llvm_instruction_block" where
   "even_return \<equiv> (
     [],
     [
-      load (%''2'') i32 (reg %''retval'') (Some 4)
+      load (%''2'') i32 (reg %retval ) (Some 4)
     ],
-    ret (Some (i1, (reg %''2'')))
+    ret (Some (i1, (reg %2)))
   )"
 
 definition even_func :: "llvm_function" where

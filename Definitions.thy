@@ -15,50 +15,8 @@ datatype llvm_address = saddr memory_model_address | haddr memory_model_address 
 datatype llvm_value = vi1 bool | vi32 word32 | vi64 word64 | addr llvm_address | poison
 
 datatype llvm_identifier = is_lid: lid string | gid string
-abbreviation local_id :: "string \<Rightarrow> llvm_identifier" ( "%_") where
-  "local_id n \<equiv> lid n"
-abbreviation global_id :: "string \<Rightarrow> llvm_identifier" ( "@_") where
-  "global_id n \<equiv> gid n"
-
-term "% ''id''" (* %id *)
 
 
-syntax
-  "_llvm_local_id" :: "id \<Rightarrow> term" ("%%_")
-
-ML \<open>
-Syntax.string_of_term @{context} @{term "lid ''local_register_name''"}
-\<close>
-
-ML \<open>
-let
-  val a = Syntax.const
-in
-  ()
-end
-\<close>
-
-print_translation \<open>
- let
-   fun llvm_local_id_tr ctx [id] = raise TERM ("llvm_local_id_tr", [id])
- in
-  [
-    (@{syntax_const "_llvm_local_id"}, llvm_local_id_tr)
-  ]
- end
-\<close>
-
-parse_translation \<open>
- let
-   fun llvm_local_id_tr ctx [id] = raise TERM ("todo", [id]) (* turn into lid ''id'' *)
- in
-  [
-    (@{syntax_const "_llvm_local_id"}, llvm_local_id_tr)
-  ]
- end
-\<close>
-
-term "%%edo"
 
 datatype llvm_value_ref = reg llvm_identifier | val llvm_value
 

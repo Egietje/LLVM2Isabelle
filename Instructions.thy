@@ -273,9 +273,9 @@ section "Phi nodes"
 
 fun phi_lookup :: "llvm_identifier option \<Rightarrow> (llvm_identifier * llvm_value_ref) list \<Rightarrow> llvm_value_ref result" where
   "phi_lookup l ls = do {
-    prev \<leftarrow> some_or_err l phi_no_previous_block;
+    prev \<leftarrow> (case l of Some v \<Rightarrow> ok v | None \<Rightarrow> err phi_no_previous_block);
     assert phi_label_not_distinct (distinct (map fst ls));
-    some_or_err (map_of ls prev) phi_label_not_found
+    case (map_of ls prev) of Some v \<Rightarrow> ok v | None \<Rightarrow> err phi_label_not_found
   }"
 
 definition execute_phi :: "llvm_identifier option \<Rightarrow> llvm_phi_node \<Rightarrow> state \<Rightarrow> state result" where
@@ -292,7 +292,7 @@ lemma phi_wp_intro[THEN consequence, wp_intro]:
   shows "wp (execute_phi pre p s) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg name := Some v') \<and> memory_\<alpha> s' = memory_\<alpha> s)"
   unfolding execute_phi_def
   using assms
-  by (simp; intro wp_intro; simp)
+  by (simp; intro wp_intro; simp; intro wp_intro; simp)
 
 
 fun execute_block :: "llvm_identifier option \<Rightarrow> llvm_instruction_block \<Rightarrow> state \<Rightarrow> (state * llvm_block_return) result" where
