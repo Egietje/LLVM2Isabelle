@@ -4,7 +4,15 @@ begin
 
 section "Definitions"
 
-
+ML \<open>
+val _ =
+  Theory.setup
+    (Attrib.setup \<^binding>\<open>rearranged\<close>
+      (Scan.lift (Parse.$$$ "(" |-- Parse.enum1 "," Parse.nat --| Parse.$$$ ")")
+        >> (fn ps =>
+              Thm.rule_attribute [] (fn _ => Drule.rearrange_prems ps)))
+      "rearrange theorem premises");
+\<close>
 subsection "Types"
 
 datatype error = unknown_register_name | invalid_address | global_register_overwrite
@@ -28,12 +36,9 @@ adhoc_overloading
 
 fun assert where "assert e True = ok ()" | "assert e False = err e"
 
-definition wp_gen :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> (error \<Rightarrow> bool) \<Rightarrow> bool" where
-  "wp_gen m P E = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> E e)"
+definition wp :: "'a result \<Rightarrow> ('a \<Rightarrow> bool) \<Rightarrow> bool" where
+  "wp m P = (case m of ok v \<Rightarrow> P v | err e \<Rightarrow> False)"
 
-abbreviation "wlp m P \<equiv> wp_gen m P (\<lambda>x. True)"
-
-abbreviation "wp m P \<equiv> wp_gen m P (\<lambda>x. False)"
 
 
 
@@ -91,7 +96,7 @@ lemma wp_impl_ok[simp]:
   assumes "wp x Q"
   shows "\<exists>v. x = ok v"
   using assms
-  unfolding wp_gen_def
+  unfolding wp_def
   by (cases x; simp)
 
 
@@ -101,76 +106,69 @@ end
 subsection "Weakest precondition intro rules"
 
 context
-  notes wp_gen_def[simp]
+  notes wp_def[simp]
 begin
 lemma consequence:
-  assumes "wp_gen x Q E"
+  assumes "wp x Q"
   assumes "\<And>x. Q x \<Longrightarrow> Q' x"
-  assumes "\<And>e. E e \<Longrightarrow> E' e"
-  shows "wp_gen x Q' E'"
+  shows "wp x Q'"
   using assms
   by (simp split: result.splits)
 
 lemma wp_ok_intro[wp_intro, simp]:
   assumes "Q x"
-  shows "wp_gen (ok x) Q E"
-  using assms
-  by simp
-
-lemma wp_err_intro[wp_intro, simp]:
-  assumes "E e"
-  shows "wp_gen (err e) Q E"
+  shows "wp (ok x) Q"
   using assms
   by simp
 
 lemma wp_return_intro:
   assumes "Q x"
-  shows "wp_gen (return x) Q E"
+  shows "wp (return x) Q"
   using assms
   by (simp add: return_def)
 
 lemma wp_assert_intro[wp_intro]:
-  assumes "b \<Longrightarrow> wp_gen f P E"
-  assumes "\<not>b \<Longrightarrow> E e"
-  shows "wp_gen (do {assert e b; f}) P E"
+  assumes "b \<Longrightarrow> wp f P"
+  assumes "\<not>b \<Longrightarrow> False"
+  shows "wp (do {assert e b; f}) P"
   using assms
   by (auto split: result.splits simp: bind_def) 
+thm wp_assert_intro
 
 lemma wp_bind_intro[wp_intro]:
-  assumes "wp_gen m (\<lambda>x. wp_gen (f x) P E) E"
-  shows "wp_gen (do {x\<leftarrow>m; f x}) P E"
+  assumes "wp m (\<lambda>x. wp (f x) P)"
+  shows "wp (do {x\<leftarrow>m; f x}) P"
   using assms
   by (cases m; simp add: bind_def)
 
 lemma wp_case_option_intro[wp_intro]:
-  assumes "(c = None \<and> wp_gen f P E) \<or> (\<exists>v. c = Some v \<and> wp_gen (g v) P E)"
-  shows "wp_gen (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P E"
+  assumes "(c = None \<and> wp f P) \<or> (\<exists>v. c = Some v \<and> wp (g v) P)"
+  shows "wp (case c of None \<Rightarrow> f | (Some v) \<Rightarrow> g v) P"
   using assms
   by auto
 
 lemma wp_case_result_intro[wp_intro]:
-  assumes "(\<exists>e. c = err e \<and> wp_gen (f e) P E) \<or> (\<exists>v. c = ok v \<and> wp_gen (g v) P E)"
-  shows "wp_gen (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P E"
+  assumes "(\<exists>e. c = err e \<and> wp (f e) P) \<or> (\<exists>v. c = ok v \<and> wp (g v) P)"
+  shows "wp (case c of err e \<Rightarrow> f e | ok v \<Rightarrow> g v) P"
   using assms
   by auto
 
 lemma wp_if_intro[wp_intro]:
-  assumes "b \<Longrightarrow> wp_gen i Q E"
-  assumes "\<not>b \<Longrightarrow> wp_gen e Q E"
-  shows "wp_gen (if b then i else e) Q E"
+  assumes "b \<Longrightarrow> wp i Q"
+  assumes "\<not>b \<Longrightarrow> wp e Q"
+  shows "wp (if b then i else e) Q"
   using assms
   by auto
 
 lemma wp_case_product_intro[wp_intro]:
-  assumes "\<And>b c. a = (b,c) \<Longrightarrow> wp_gen (f b c) Q E"
-  shows "wp_gen (case a of (b,c) \<Rightarrow> f b c) Q E"
+  assumes "\<And>b c. a = (b,c) \<Longrightarrow> wp (f b c) Q"
+  shows "wp (case a of (b,c) \<Rightarrow> f b c) Q"
   using assms
   by (cases a; simp)
 
 lemma wp_result_intro:
-  assumes "\<And>x. f = ok x \<Longrightarrow> Q x"
-  assumes "\<And>e. f = err e \<Longrightarrow> E e"
-  shows "wp_gen f Q E"
+  assumes "f = ok x" "Q x"
+  shows "wp f Q"
   using assms
   by (cases f; simp)
 

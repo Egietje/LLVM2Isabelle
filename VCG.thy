@@ -81,31 +81,118 @@ method solve_subgoal = sub_instantiate_register_address | sub_memory_valid | sub
 
 subsection "Instruction Methods"
 
-method strat_instr methods m = rule wp_intro, m, clean_assms; (simp only: False_eq_False)?
-method strat_instr_dbg = (rule wp_intro, (solve_subgoal+)?); (rule asm_rl[of "wp _ _"], clean_assms)?; (simp only: False_eq_False)?
+method strat_instr methods m = rule wp_intro, m, clean_assms
 
-method strat_alloca = rule asm_rl[of "wp (execute_alloca _ _) _"], strat_instr \<open>sub_is_lid\<close>
-method strat_store  = rule asm_rl[of "wp (execute_store _ _ _) _"], strat_instr \<open>sub_instantiate_register_address, sub_memory_valid, sub_register_value\<close>
-method strat_load   = rule asm_rl[of "wp (execute_load _ _ _) _"], strat_instr \<open>sub_instantiate_register_address, sub_memory_value, sub_is_lid\<close>
-method strat_add    = rule asm_rl[of "wp (execute_add _ _ _ _ _) _"], strat_instr \<open>sub_register_value, sub_register_value, sub_add_poison, sub_is_lid\<close>
-method strat_icmp   = rule asm_rl[of "wp (execute_icmp _ _ _ _ _ _) _"], strat_instr \<open>sub_register_value, sub_register_value, sub_icmp_same_signs, sub_is_lid\<close>; simp only: compare_values_32.simps compare_values_64.simps compare_values_1.simps
-
-method strat_alloca_dbg = rule asm_rl[of "wp (execute_alloca _ _) _"], strat_instr_dbg
-method strat_store_dbg  = rule asm_rl[of "wp (execute_store _ _ _) _"], strat_instr_dbg
-method strat_load_dbg   = rule asm_rl[of "wp (execute_load _ _ _) _"], strat_instr_dbg
-method strat_add_dbg    = rule asm_rl[of "wp (execute_add _ _ _ _ _) _"], strat_instr_dbg
-method strat_icmp_dbg   = rule asm_rl[of "wp (execute_icmp _ _ _ _ _ _) _"], strat_instr_dbg
+method strat_alloca = rule asm_rl[of "wp (execute_alloca _ _) _"], strat_instr \<open>-\<close>
+method strat_store  = rule asm_rl[of "wp (execute_store _ _ _) _"], strat_instr \<open>sub_instantiate_register_address, sub_register_value\<close>
+method strat_load   = rule asm_rl[of "wp (execute_load _ _ _) _"], strat_instr \<open>sub_instantiate_register_address, sub_memory_value\<close>
+method strat_add    = rule asm_rl[of "wp (execute_add _ _ _ _ _) _"], strat_instr \<open>sub_register_value, sub_register_value\<close>
+method strat_icmp   = rule asm_rl[of "wp (execute_icmp _ _ _ _ _ _) _"],
+  ((rule icmp1_wp_intro, sub_register_value, sub_register_value)
+  | (rule icmp32_wp_intro, sub_register_value, sub_register_value)
+  | (rule icmp64_wp_intro, sub_register_value, sub_register_value)),
+  clean_assms,
+  simp only: compare_values_1.simps compare_values_32.simps compare_values_64.simps
 
 method unfold_instr = rule asm_rl[of "wp (execute_instruction _ _) _"], rule wp_intro
 
 method vcg_instr = unfold_instr | strat_alloca | strat_store | strat_load | strat_add | strat_icmp
-method vcg_instr_dbg = unfold_instr | strat_alloca_dbg | strat_store_dbg | strat_load_dbg | strat_add_dbg | strat_icmp_dbg
 
 
 subsection "Phi Node Methods"
 
 method strat_phi = rule asm_rl[of "wp (execute_phi _ _ _) _"], strat_instr \<open>sub_distinct_first, sub_some_refl, sub_map_of_some, sub_register_value\<close>
-method strat_phi_dbg = rule asm_rl[of "wp (execute_phi _ _ _) _"], strat_instr_dbg
+
+
+
+
+
+
+
+
+
+
+lemma register_\<alpha>_pop_contract [simp]:
+  "register_\<alpha> (pop_frame s s') ref = (
+     case ref of
+       reg (lid n) \<Rightarrow> register_\<alpha> s (reg (lid n))
+     | reg (gid n) \<Rightarrow> register_\<alpha> s' (reg (gid n))
+     | val v       \<Rightarrow> Some v)"
+  by (cases s; cases s'; cases ref; auto split: llvm_value_ref.splits llvm_identifier.splits) 
+fun stack_len :: "state \<Rightarrow> nat" where
+  "stack_len (lr, gr, sm, hm, gm) = length sm"
+
+lemma memory_\<alpha>_pop_saddr [simp]:
+  "memory_\<alpha> (pop_frame s s') (saddr a) = 
+     (if memory_\<alpha> s (saddr a) \<noteq> None then memory_\<alpha> s' (saddr a) else None)"
+  by (cases s; cases s'; simp add: single_memory_\<alpha>_def allocated_single_memory_address_def)
+
+lemma memory_\<alpha>_pop_haddr [simp]:
+  "memory_\<alpha> (pop_frame s s') (haddr a) = memory_\<alpha> s' (haddr a)"
+  by (cases s; cases s'; simp)
+
+lemma memory_\<alpha>_pop_gaddr [simp]:
+  "memory_\<alpha> (pop_frame s s') (gaddr a) = memory_\<alpha> s' (gaddr a)"
+  by (cases s; cases s'; simp)
+
+
+lemma register_\<alpha>_push_frame [simp]:
+  "register_\<alpha> (push_frame s) (reg (lid n)) = None"
+  "register_\<alpha> (push_frame s) (reg (gid n)) = register_\<alpha> s (reg (gid n))"
+  by (cases s; simp)+
+
+lemma memory_\<alpha>_push_frame [simp]:
+  "memory_\<alpha> (push_frame s) = memory_\<alpha> s"
+  apply (rule ext) subgoal for ad
+    by (cases s; cases ad; simp)
+  done
+
+
+
+
+
+lemma contract_updates_register[simp]:
+  assumes trace_link: "\<And>r. register_\<alpha> callee_state (reg (gid r)) = f (reg (gid r))"
+  assumes frame_invariant: "\<And>r name. r = reg (gid name) \<Longrightarrow> f r = register_\<alpha> caller_state r"
+  shows "register_\<alpha> (pop_frame caller_state callee_state) = register_\<alpha> caller_state"
+  apply (rule ext)
+  subgoal for n apply (cases n)
+  subgoal for name apply (cases name)
+    using assms by (auto )
+  by simp done
+
+lemma pop_frame_peel_gaddr [simp]:
+  "(\<lambda>a. case a of saddr sa \<Rightarrow> if M a \<noteq> None then (C (gaddr ga \<mapsto> v)) a else None | _ \<Rightarrow> (C (gaddr ga \<mapsto> v)) a) =
+   ((\<lambda>a. case a of saddr sa \<Rightarrow> if M a \<noteq> None then C a else None | _ \<Rightarrow> C a) (gaddr ga \<mapsto> v))"
+  apply (rule ext) subgoal for a by (cases a) auto done
+
+lemma pop_frame_peel_haddr [simp]:
+  "(\<lambda>a. case a of saddr sa \<Rightarrow> if M a \<noteq> None then (C (haddr ha \<mapsto> v)) a else None | _ \<Rightarrow> (C (haddr ha \<mapsto> v)) a) =
+   ((\<lambda>a. case a of saddr sa \<Rightarrow> if M a \<noteq> None then C a else None | _ \<Rightarrow> C a) (haddr ha \<mapsto> v))"
+  apply (rule ext) subgoal for a by (cases a) auto done
+
+lemma pop_frame_peel_saddr [simp]:
+  "(\<lambda>a. case a of saddr sa' \<Rightarrow> if M a \<noteq> None then (C (saddr sa \<mapsto> v)) a else None | _ \<Rightarrow> (C (saddr sa \<mapsto> v)) a) =
+   (if M (saddr sa) \<noteq> None 
+    then ((\<lambda>a. case a of saddr sa' \<Rightarrow> if M a \<noteq> None then C a else None | _ \<Rightarrow> C a) (saddr sa \<mapsto> v))
+    else (\<lambda>a. case a of saddr sa' \<Rightarrow> if M a \<noteq> None then C a else None | _ \<Rightarrow> C a))"
+  apply (rule ext) subgoal for a by (cases a) auto done
+
+lemma pop_frame_M_drop_saddr [simp]:
+  "C (saddr sa') = None \<Longrightarrow>
+   (\<lambda>a. case a of saddr sa \<Rightarrow> if (M(saddr sa' \<mapsto> v)) a \<noteq> None then C a else None | _ \<Rightarrow> C a) =
+   (\<lambda>a. case a of saddr sa \<Rightarrow> if M a \<noteq> None then C a else None | _ \<Rightarrow> C a)"
+  apply (rule ext) subgoal for a by (cases a) auto done
+
+lemma pop_frame_peel_absolute_base [simp]:
+  "(\<lambda>a. case a of saddr sa \<Rightarrow> if C a \<noteq> None then C a else None | _ \<Rightarrow> C a) = C"
+  apply (rule ext) subgoal for a by (cases a) auto done
+
+lemma memory_pop_frame [simp]:
+  assumes "memory_\<alpha> x = X"
+  assumes "memory_\<alpha> y = Y"
+  shows "memory_\<alpha> (pop_frame x y) = (\<lambda>a. case a of saddr sa \<Rightarrow> if X a \<noteq> None then Y a else None | _ \<Rightarrow> Y a)"
+  apply (rule ext) subgoal for a using assms by (cases a) auto done
 
 
 
@@ -123,18 +210,71 @@ method strat_phi_dbg = rule asm_rl[of "wp (execute_phi _ _ _) _"], strat_instr_d
 
 
 
+method solve_subgoal_first_label uses func =
+  (rule asm_rl[of "\<exists>y. (first_label _ = Some y)"] | rule asm_rl[of "first_label _ = Some _"]),
+  (subst func)?,
+  subst first_label_def,
+  (simp; fail)
+method solve_subgoal_map_of uses def =
+  rule asm_rl[of "map_of _ _ = Some _"],
+  (subst def)?,
+  (simp; fail)
+method solve_subgoal_register_value =
+  rule asm_rl[of "register_contains_value _ _ _"],
+  (simp; fail)
+method solve_subgoal_var_is_Some =
+  rule asm_rl[of "_ = Some _"],
+  (simp; fail)
 
+method vcg_assign_params =
+  rule asm_rl[of "wp (assign_params (_#_) (_#_) _ _) _"],
+  rule wp_assign_params_intro,
+  solve_subgoal_register_value,
+  sub_is_lid
 
-method vcg_verify_function uses annot =
-  subst (3) annot,
-  simp del: split_paired_All,
-  intro conjI
+method vcg_assign_params_empty =
+  rule asm_rl[of "wp (assign_params [] [] _ _) _"],
+  rule wp_assign_params_empty_intro
 
-method vcg_verify_program uses prog annot =
+method vcg_prepare_state uses func =
+  rule asm_rl[of "wp (prepare_state _ _ _) _"],
+  simp only: prepare_state.simps,
+  subst func,
+  simp (no_asm) del: assign_params.simps split_paired_All,
+  (vcg_assign_params+)?,
+  vcg_assign_params_empty,
+  intro conjI[rotated],
+  intro allI impI,
+  elim exE conjE
+
+method remove_invalid_premise =
+  (match premises in "Some _ = None" \<Rightarrow> blast)
+
+method vcg_set_register = 
+  rule asm_rl[of "wp (set_register _ _ (pop_frame _ _)) _"],
+  rule wp_intro; (sub_is_lid | simp only: False_eq_False)? 
+method vcg_wp_ok =
+  rule asm_rl[of "wp (ok _) _"],
+  rule wp_intro
+
+method clean_assms_after_call =
+  elim conjE,
   simp,
-  subst prog,
-  simp,
-  (intro conjI)?; vcg_verify_function annot: annot
+  (hypsubst_thin)+,
+  (subst (asm) fun_upd_apply[symmetric])+,
+  clean_assms,
+  thin_tac "register_\<alpha> _ (reg (gid _)) = register_\<alpha> _ (reg (gid _))"
+
+method vcg_restore_state =
+  rule asm_rl[of "wp (restore_state _ _ _ _) _"],
+  ((rule wp_restore_state_intro,
+  solve_subgoal_var_is_Some); (simp; fail)?),
+  (vcg_set_register | vcg_wp_ok);
+  clean_assms_after_call
+
+
+
+
 
 method unfold_first_label uses func =
   subst first_label_def,
@@ -142,39 +282,63 @@ method unfold_first_label uses func =
   simp del: split_paired_All
 
 method vcg_step uses prog func =
+  rule asm_rl[of "wp_step _ _ _ _"],
   rule wp_step_intro,
   subst prog,
   simp,
   subst func,
   simp
 
-method vcg_floyd_cond uses prog func =
+method unfold_floyd_cond uses prog func =
+  rule asm_rl[of "floyd_cond _ _ _ _ _ _ _"],
   subst floyd_cond_def,
   rule wp_annotated_step_intro,
-  (vcg_step prog: prog func: func)
+  (vcg_step prog: prog func: func),
+  clean_assms
+  
+
+
+method vcg_verify_program uses prog =
+  rule asm_rl[of "verify_program _ _"],
+  simp del: verify_function.simps,
+  subst prog,
+  simp del: verify_function.simps,
+  (intro conjI)?
+
+
 
 
 method vcg_step_instr =
   rule asm_rl[of "wp_rc_step_i _ _ (execi _ ([],_#_,_) _) _"],
   intro wp_step_i_intros;
   force?;
-  (thin_tac "\<not>is_call _" | thin_tac "is_call _")?,
-  (vcg_instr+)?
+  (thin_tac "\<not>is_call _" | thin_tac "is_call _")?;
+  vcg_instr+
+
 method vcg_step_ter =
   rule asm_rl[of "wp_rc_step_i _ _ (execi _ ([],[],_) _) _"],
   intro wp_step_i_intros,
   (simp; fail)?;
   (thin_tac "\<not>is_call _" | thin_tac "is_call _")?
 
-method vcg_steps_execi uses block =
+method vcg_call uses func prog annot =
+  (rule asm_rl[of "wp_rc_step_i _ _ (execi _ (_, (call _ _ _ _)#_, _) _) _"]),
+  (intro wp_step_i_intros; force?; (thin_tac "\<not>is_call _" | thin_tac "is_call _")?),
+  solve_subgoal_map_of def: prog,
+  solve_subgoal_first_label func: func,
+  solve_subgoal_map_of def: annot,
+  vcg_prepare_state func: func,
+  vcg_restore_state
+
+method vcg_steps_execi uses block func prog annot =
   rule asm_rl[of "wp_rc_steps_i _ _ (execi _ _ _) _"],
   rule wp_rc_steps_i_intro;
   (simp; fail)?;
   (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)" | thin_tac "_ \<nexists>\<rightarrow>\<^sub>i")?,
   (subst block)?,
-  (vcg_step_instr | vcg_step_ter)
+  (vcg_call func: func prog: prog annot: annot | vcg_step_instr | vcg_step_ter)
 
-method vcg_steps_flowi_branch uses block pre prog annot =
+method vcg_steps_flowi_branch uses block prog annot =
   rule asm_rl[of "wp_rc_steps_i _ _ (flowi _ (branch_label _)) _"],
   rule wp_rc_steps_i_intro;
   (simp; fail)?;
@@ -184,7 +348,7 @@ method vcg_steps_flowi_branch uses block pre prog annot =
   ((subst (asm) has_annotation_def, subst (asm) prog, subst (asm) annot, simp); fail)?,
   (thin_tac "has_annotation _ _ _" | thin_tac "\<not>has_annotation _ _ _")?
 
-method vcg_steps_flowi_return uses block pre prog annot =
+method vcg_steps_flowi_return uses block prog annot =
   rule asm_rl[of "wp_rc_steps_i _ _ (flowi _ (return_value _)) _"],
   rule wp_rc_steps_i_intro;
   (simp; fail)?;
@@ -194,36 +358,45 @@ method vcg_steps_flowi_return uses block pre prog annot =
   ((subst (asm) has_annotation_def, subst (asm) prog, subst (asm) annot, simp); fail)?,
   (thin_tac "has_annotation _ _ _" | thin_tac "\<not>has_annotation _ _ _")?
 
-method vcg_steps uses block pre =
-  rule wp_rc_steps_i_intro;
-  (simp; fail)?;
-  (thin_tac "\<not>(_ \<nexists>\<rightarrow>\<^sub>i)" | thin_tac "_ \<nexists>\<rightarrow>\<^sub>i")?,
-  (subst block)?,
-  (subst (asm) pre)?
+method vcg_steps uses block prog annot func =
+  vcg_steps_execi block: block func: func prog: prog annot: annot |
+  vcg_steps_flowi_branch block: block prog: prog annot: annot |
+  vcg_steps_flowi_return block: block prog: prog annot: annot |
+  vcg_step prog: prog func: func
 
-method vcg_annotation_holds uses prog annot pre =
+method unfold_annotation_holds uses prog annot =
   subst annotation_holds_def,
   subst prog,
   subst annot,
   (simp (no_asm) del: split_paired_All)?,
-  unfold pre,
+  subst annot,
   (simp (no_asm) del: split_paired_All)?
 
 
-method unfold_precond uses pre annot prog =
+
+method unfold_precond uses annot prog =
   (subst (asm) annotation_holds_def,
   subst (asm) annot,
   subst (asm) prog)?,
   (simp (no_asm_use) del: split_paired_All)?,
-  subst (asm) pre,
   clean_assms
 
+method vcg_all_steps uses blocks prog annot func =
+  vcg_steps block: blocks prog: prog annot: annot func: func;
+  (vcg_all_steps blocks: blocks prog: prog annot: annot func: func | succeed);
+  (unfold_annotation_holds prog: prog annot: annot)?
 
-
-
-
-
-
+method vcg_verify_function uses annot prog func blocks =
+  (rule asm_rl[of "verify_function _ _ _ _"],
+  simp,
+  subst (3) annot,
+  simp del: split_paired_All,
+  (intro conjI, solve_subgoal_first_label func: func); unfold_first_label func: func;
+  intro allI impI conjI; unfold_floyd_cond prog: prog func: func);
+  (unfold_precond prog: prog annot: annot)?;
+  vcg_all_steps blocks: blocks prog: prog annot: annot func: func
+  
+  
 
 
 
@@ -384,83 +557,5 @@ lemma bounded_inc_no_overflow[simp]: "0 \<le>s i \<Longrightarrow> (b::word32) \
 lemma pos_not_neg[simp]: "0 <s (i::word32)+1 \<Longrightarrow> \<not> i + 1 <s 0" by simp
 
 end
-
-
-
-
-
-
-
-
-method unfold_wp_instrs_phi = rule asm_rl[of "wp_instrs _ (execi _ (_#_,_,_) _) _"], rule wp_instrs_intro
-
-method phi_vcg_step = unfold_wp_instrs_phi | strat_phi
-method phi_vcg_step_dbg = unfold_wp_instrs_phi | strat_phi_dbg
-
-
-subsection "Terminal Instruction Methods"
-
-
-method strat_branch_i1 = rule asm_rl[of "wp_instrs _ (execi _ ([], [], br_i1 _ _ _) _) _"], (intro wp_instrs_intro, sub_register_value); (simp only: False_eq_False)?
-method strat_branch_label = rule asm_rl[of "wp_instrs _ (execi  _ ([], [], br_label _) _ ) _"], intro wp_instrs_intro; (simp only: False_eq_False)?
-method strat_return = rule asm_rl[of "wp_instrs _ (execi _ ([], [], ret _) _ ) _"], (intro wp_instrs_intro, sub_register_value); (simp only: False_eq_False)?
-
-method term_vcg_step = strat_branch_i1 | strat_branch_label | strat_return
-method term_vcg_step_dbg = rule asm_rl[of "wp_instrs _ (execi _ ([], [], _) _) _"], intro wp_instrs_intro, (solve_subgoal+)?; (simp only: False_eq_False)?
-
-
-subsection "Block VCG Methods"
-
-method block_vcg_step = phi_vcg_step | instr_vcg_step | term_vcg_step
-method block_vcg_step_dbg = phi_vcg_step_dbg | instr_vcg_step_dbg | term_vcg_step_dbg
-
-method block_vcg uses pres blocks = (subst (asm) pres)?, (subst (2) blocks)?, unfold_unique_addresses?, block_vcg_step+; (simp (no_asm))?, (intro conjI impI)?
-method block_vcg_dbg uses pres blocks = (subst (asm) pres)?, (subst (2) blocks)?, unfold_unique_addresses?, block_vcg_step_dbg+, (simp (no_asm))?, (intro conjI impI)?
-
-
-subsection "Multi-Block VCG Methods"
-
-method unfold_floyd uses prog_def func_def =
-  rule asm_rl[of "floyd_vc _ _"],
-  rule floyd_vc_intro,
-  unfold first_label_def floyd_cond_def annotation_holds_def has_annotation_def,
-  (simp add: prog_def),
-  intro conjI allI impI;
-  (simp add: func_def)?;
-  ((thin_tac "_ = Some (lid _)" | thin_tac "_ = None"), simp only: triv_forall_equality)?
-
-
-method instantiate_block =
-  rule asm_rl[of "map_of _ (lid _) = Some _"],
-  force
-method instantiate_func =
-  rule asm_rl[of "map_of _ (gid _) = Some _"],
-  force
-
-method unfold_wp_step =
-  rule asm_rl[of "wp_step _ _ _"],
-  rule wp_step_intro,
-  instantiate_func,
-  instantiate_block
-
-method unfold_wp_annotated_step =
-  rule asm_rl[of "wp_annotated_step _ _ _ _"],
-  rule wp_annotated_step_intro,
-  unfold_wp_step
-
-
-method unfold_endgoal =
-  rule asm_rl[of "annotation_holds _ _ _"],
-  unfold annotation_holds_def,
-  simp (no_asm)
-
-
-method unfold_wp_steps_until =
-  rule asm_rl[of "wp_steps_until _ _ _ _"],
-  rule wp_steps_until_intro;
-  (unfold has_annotation_def; force; fail)?;
-  (thin_tac "\<not>has_annotation _ _ _" | thin_tac "has_annotation _ _ _")?;
-  (unfold_wp_step | unfold_endgoal)?
-
 
 end

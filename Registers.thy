@@ -51,15 +51,14 @@ lemma wp_set_single_register_lid_intro[THEN consequence, register_intro]:
   "wp (return (set_single_register n v lr,gr,sm,hm,gm)) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> (lr,gr,sm,hm,gm))(reg (lid n) := Some v) \<and> memory_\<alpha> s' = memory_\<alpha> (lr,gr,sm,hm,gm))"
   unfolding set_single_register_def
   by (intro wp_intro wp_return_intro; simp)
-
+                                          
 lemma wp_set_register_intro[THEN consequence, wp_intro]:
   assumes "is_lid n"
   shows "wp (set_register n v s) (\<lambda>s'. register_\<alpha> s' = (register_\<alpha> s)(reg n := Some v) \<and> memory_\<alpha> s' = memory_\<alpha> s)"
   using assms
   by (cases n; cases s; simp; intro wp_intro register_intro; simp add: set_single_register_def)
 
-
-lemma wp_get_register_intro[THEN consequence, wp_intro]:        
+lemma wp_get_register_intro[THEN consequence, rearranged (1,0), wp_intro]:
   assumes "register_\<alpha> s n \<noteq> None"
   shows "wp (dereference s n) (\<lambda>v'. register_\<alpha> s n = Some v')"
   using assms

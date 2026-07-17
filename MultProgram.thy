@@ -22,8 +22,8 @@ definition mult_entry :: "llvm_instruction_block" where
   )"
 
 
-definition mult_pre :: "precondition" where
-  "mult_pre = (\<lambda>s. \<exists>a b.
+abbreviation mult_pre :: "precondition" where
+  "mult_pre \<equiv> (\<lambda>s. \<exists>a b.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> - (2 ^ 31) \<le> sint a * sint b
@@ -34,15 +34,15 @@ definition mult_pre :: "precondition" where
 
 (*
 2 entry:
-3 %a.addr = alloca i32, align 4
-4 %b.addr = alloca i32, align 4
-5 %result = alloca i32, align 4
-6 %i = alloca i32, align 4
-7 store i32 %a, ptr %a.addr, align 4
-8 store i32 %b, ptr %b.addr, align 4
-9 store i32 0, ptr %result, align 4
-10 store i32 0, ptr %i, align 4
-11 br label %for.cond
+3 lid a.addr = alloca i32, align 4
+4 lid b.addr = alloca i32, align 4
+5 lid result = alloca i32, align 4
+6 lid i = alloca i32, align 4
+7 store i32 lid a, ptr lid a.addr, align 4
+8 store i32 lid b, ptr lid b.addr, align 4
+9 store i32 0, ptr lid result, align 4
+10 store i32 0, ptr lid i, align 4
+11 br label lid for.cond
 *)
 
 
@@ -59,10 +59,10 @@ definition mult_cond :: "llvm_instruction_block" where
 
 (*
 13 for.cond:
-14 %0 = load i32, ptr %i, align 4
-15 %1 = load i32, ptr %b.addr, align 4
-16 %cmp = icmp slt i32 %0, %1
-17 br i1 %cmp, label %for.body, label %for.end
+14 lid 0 = load i32, ptr lid i, align 4
+15 lid 1 = load i32, ptr lid b.addr, align 4
+16 lid cmp = icmp slt i32 lid 0, lid 1
+17 br i1 lid cmp, label lid for.body, label lid for.end
 *)
 
 
@@ -78,17 +78,17 @@ definition mult_body :: "llvm_instruction_block" where
     br_label (lid ''for.inc'')
   )"
 
-definition mult_body_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
-  "mult_body_pre = (\<lambda>s s'. \<exists>aa a ba b ia i resa.
-    register_contains_value ((%''a.addr'')) (addr aa) s'
-  \<and> register_contains_value ((%''i''))      (addr ia) s'
-  \<and> register_contains_value ((%''b.addr'')) (addr ba) s'
-  \<and> register_contains_value ((%''result'')) (addr resa) s'
+abbreviation mult_body_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
+  "mult_body_pre \<equiv> (\<lambda>s s'. \<exists>aa a ba b ia i resa.
+    register_contains_value ((lid ''a.addr'')) (addr aa) s'
+  \<and> register_contains_value ((lid ''i''))      (addr ia) s'
+  \<and> register_contains_value ((lid ''b.addr'')) (addr ba) s'
+  \<and> register_contains_value ((lid ''result'')) (addr resa) s'
 
-  \<and> register_contains_value ((%''a'')) (vi32 a) s
-  \<and> register_contains_value ((%''b'')) (vi32 b) s
-  \<and> register_contains_value ((%''a'')) (vi32 a) s'
-  \<and> register_contains_value ((%''b'')) (vi32 b) s'
+  \<and> register_contains_value ((lid ''a'')) (vi32 a) s
+  \<and> register_contains_value ((lid ''b'')) (vi32 b) s
+  \<and> register_contains_value ((lid ''a'')) (vi32 a) s'
+  \<and> register_contains_value ((lid ''b'')) (vi32 b) s'
 
   \<and> memory_\<alpha> s' = (memory_\<alpha> s)(
       aa   := Some (mem_val (vi32 a)),
@@ -103,11 +103,11 @@ definition mult_body_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
 
 (*
 19 for.body:
-20 %2 = load i32, ptr %a.addr, align 4
-21 %3 = load i32, ptr %result, align 4
-22 %add = add nsw i32 %3, %2
-23 store i32 %add, ptr %result, align 4
-24 br label %for.inc
+20 lid 2 = load i32, ptr lid a.addr, align 4
+21 lid 3 = load i32, ptr lid result, align 4
+22 lid add = add nsw i32 lid 3, lid 2
+23 store i32 lid add, ptr lid result, align 4
+24 br label lid for.inc
 *)
 
 
@@ -125,10 +125,10 @@ definition mult_inc :: "llvm_instruction_block" where
 
 (*
 26 for.inc:
-27 %4 = load i32, ptr %i, align 4
-28 %inc = add nsw i32 %4, 1
-29 store i32 %inc, ptr %i, align 4
-30 br label %for.cond
+27 lid 4 = load i32, ptr lid i, align 4
+28 lid inc = add nsw i32 lid 4, 1
+29 store i32 lid inc, ptr lid i, align 4
+30 br label lid for.cond
 *)
 
 
@@ -141,17 +141,17 @@ definition mult_end :: "llvm_instruction_block" where
     ret (Some (i32, (reg (lid ''5''))))
   )"
 
-definition mult_end_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
-  "mult_end_pre = (\<lambda>s s'. \<exists>aa a ba b ia i resa.
-    register_contains_value ((%''a.addr'')) (addr aa) s'
-  \<and> register_contains_value ((%''i''))      (addr ia) s'
-  \<and> register_contains_value ((%''b.addr'')) (addr ba) s'
-  \<and> register_contains_value ((%''result'')) (addr resa) s'
+abbreviation mult_end_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
+  "mult_end_pre \<equiv> (\<lambda>s s'. \<exists>aa a ba b ia i resa.
+    register_contains_value ((lid ''a.addr'')) (addr aa) s'
+  \<and> register_contains_value ((lid ''i''))      (addr ia) s'
+  \<and> register_contains_value ((lid ''b.addr'')) (addr ba) s'
+  \<and> register_contains_value ((lid ''result'')) (addr resa) s'
 
-  \<and> register_contains_value ((%''a'')) (vi32 a) s
-  \<and> register_contains_value ((%''b'')) (vi32 b) s
-  \<and> register_contains_value ((%''a'')) (vi32 a) s'
-  \<and> register_contains_value ((%''b'')) (vi32 b) s'
+  \<and> register_contains_value ((lid ''a'')) (vi32 a) s
+  \<and> register_contains_value ((lid ''b'')) (vi32 b) s
+  \<and> register_contains_value ((lid ''a'')) (vi32 a) s'
+  \<and> register_contains_value ((lid ''b'')) (vi32 b) s'
 
   \<and> memory_\<alpha> s' = (memory_\<alpha> s)(
       aa   := Some (mem_val (vi32 a)),
@@ -163,8 +163,8 @@ definition mult_end_pre :: "state \<Rightarrow> state \<Rightarrow> bool" where
   \<and> i = b
   )"
 
-definition mult_post :: "postcondition" where
-  "mult_post = (\<lambda>s s' v. \<exists>a b i aa ba ia resa.
+abbreviation mult_post :: "postcondition" where
+  "mult_post \<equiv> (\<lambda>s s' v. \<exists>a b i aa ba ia resa.
     register_contains_value (lid ''a'') (vi32 a) s
   \<and> register_contains_value (lid ''b'') (vi32 b) s
   \<and> memory_\<alpha> s' = (memory_\<alpha> s)(
@@ -178,8 +178,8 @@ definition mult_post :: "postcondition" where
 
 (*
 32 for.end:
-33 %5 = load i32, ptr %result, align 4
-34 ret i32 %5
+33 lid 5 = load i32, ptr lid result, align 4
+34 ret i32 lid 5
 *)
 
 
@@ -223,152 +223,56 @@ lemma mult_floyd:
     mult_program
     mult_annotations"
   including word_bundle
-  apply (vcg_verify_program prog: mult_program_def annot: mult_annotations_def)
-  apply (unfold_first_label func: mult_function_def)
-  apply (unfold_first_label func: mult_function_def)
-  
-  apply (intro allI impI conjI)
+  apply (vcg_verify_program prog: mult_program_def)
+  apply (vcg_verify_function blocks: mult_entry_def mult_cond_def mult_body_def mult_inc_def mult_end_def annot: mult_annotations_def prog: mult_program_def func: mult_function_def)
 
-  subgoal for s (* entry \<rightarrow> cond \<rightarrow> body *)
-    apply (vcg_floyd_cond prog: mult_program_def func: mult_function_def)
-    apply (unfold_precond pre: mult_pre_def)
-    apply (vcg_steps_execi block: mult_entry_def)
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-    apply (vcg_step prog: mult_program_def func: mult_function_def)
-    apply (vcg_steps_execi block: mult_cond_def)
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-    apply (vcg_annotation_holds prog: mult_program_def annot: mult_annotations_def pre: mult_body_pre_def)
-    apply (intro conjI)
-    subgoal
-      unfolding mult_pre_def
-      by blast
-    subgoal for a b aa ba ra ia s' 
-      apply (rule exI[where x=aa])
-      apply (rule exI[where x=a])
-      apply (rule exI[where x=ba])
-      apply (rule exI[where x=b])
-      apply (rule exI[where x=ia])
-      apply (rule exI[where x=0])
-      apply (rule exI[where x=ra])
-      by (auto split: if_splits)
-    by blast
-
-  subgoal for init s (* body \<rightarrow> inc \<rightarrow> cond \<rightarrow> body or end *)
-    apply (vcg_floyd_cond prog: mult_program_def func: mult_function_def)
-    apply (unfold_precond prog: mult_program_def annot: mult_annotations_def pre: mult_body_pre_def mult_pre_def)
-    apply (vcg_steps_execi block: mult_body_def)
-    apply vcg_steps_execi
-    apply vcg_steps_execi apply (subst (asm) mult_pre_def) apply (clean_assms)
-    apply (intro wp_intro) apply simp apply simp subgoal apply (auto simp:  word_sless_alt word_sle_eq) sorry apply simp defer apply simp
-    apply vcg_steps_execi
-    apply vcg_steps_execi                                               
-    apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-    apply (vcg_step prog: mult_program_def func: mult_function_def)
-    apply (vcg_steps_execi block: mult_inc_def)
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-    apply (vcg_step prog: mult_program_def func: mult_function_def)
-    apply (vcg_steps_execi block: mult_cond_def)
-    apply vcg_steps_execi
-    apply vcg_steps_execi
-    apply vcg_steps_execi 
-    subgoal for aa a ba b ia i ra s' (* cond \<rightarrow> body *)
-      apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-      apply (vcg_annotation_holds prog: mult_program_def annot: mult_annotations_def pre: mult_body_pre_def)
-      apply (intro conjI) unfolding mult_pre_def apply blast
-      
-      apply (rule exI[where x=aa])
-      apply (rule exI[where x=a])
-      apply (rule exI[where x=ba])
-      apply (rule exI[where x=b])
-      apply (rule exI[where x=ia])
-      apply (rule exI[where x="i+1"])
-      apply (rule exI[where x=ra]) 
-      by (auto simp: distrib_left)
-    subgoal for aa a ba b ia i ra s' (* cond \<rightarrow> end *)
-      apply (vcg_steps_flowi_branch prog: mult_program_def annot: mult_annotations_def)
-      apply (vcg_annotation_holds prog: mult_program_def annot: mult_annotations_def pre: mult_end_pre_def)
-      apply (intro conjI) unfolding mult_pre_def apply blast
-      apply (rule exI[where x=aa])
-      apply (rule exI[where x=a])
-      apply (rule exI[where x=ba])
-      apply (rule exI[where x=b])
-      apply (rule exI[where x=ia])
-      apply (rule exI[where x="i+1"])
-      apply (rule exI[where x=ra]) 
-      by auto
-    done
-
-  subgoal for init s (* end \<rightarrow> return *)
-    apply (vcg_floyd_cond prog: mult_program_def func: mult_function_def)
-    apply (unfold_precond prog: mult_program_def annot: mult_annotations_def pre: mult_end_pre_def)
-    apply (vcg_steps_execi block: mult_end_def)
-    apply vcg_steps_execi 
-    apply (vcg_steps_flowi_return prog: mult_program_def annot: mult_annotations_def)
-    apply (vcg_annotation_holds prog: mult_program_def annot: mult_annotations_def pre: mult_post_def)
-    apply (subst mult_program_def)
-    apply (intro conjI) defer unfolding mult_pre_def apply blast defer apply simp
-    subgoal for aa a ba b ia i resa s'
-      apply (rule exI[where x=a])
-      apply (rule exI[where x=b])
-      apply (rule exI[where x="b"])
-      apply (rule exI[where x=aa]) 
-      apply (rule exI[where x=ba]) 
-      apply (rule exI[where x=ia]) 
-      apply (rule exI[where x=resa])
-    by simp
-  done
+  apply (auto split: if_splits)
+  unfolding mult_program_def
+     apply force
+    defer
+    apply force
+   apply force
+  subgoal for a aa ab ac b ad ae af ag ba ah bb aaaa baaa ia i resa ai aj ak al bc
+    apply (rule exI[where x="i + 1"])
+    by (auto simp: distrib_left)
   done
 
 
 (*
-1 define dso_local noundef i32 @mult(int, int)(i32 noundef %a, i32 noundef %b) { llvm
+1 define dso_local noundef i32 @mult(int, int)(i32 noundef lid a, i32 noundef lid b) { llvm
 2 entry:
-3 %a.addr = alloca i32, align 4
-4 %b.addr = alloca i32, align 4
-5 %result = alloca i32, align 4
-6 %i = alloca i32, align 4
-7 store i32 %a, ptr %a.addr, align 4
-8 store i32 %b, ptr %b.addr, align 4
-9 store i32 0, ptr %result, align 4
-10 store i32 0, ptr %i, align 4
-11 br label %for.cond
+3 lid a.addr = alloca i32, align 4
+4 lid b.addr = alloca i32, align 4
+5 lid result = alloca i32, align 4
+6 lid i = alloca i32, align 4
+7 store i32 lid a, ptr lid a.addr, align 4
+8 store i32 lid b, ptr lid b.addr, align 4
+9 store i32 0, ptr lid result, align 4
+10 store i32 0, ptr lid i, align 4
+11 br label lid for.cond
 12
 13 for.cond:
-14 %0 = load i32, ptr %i, align 4
-15 %1 = load i32, ptr %b.addr, align 4
-16 %cmp = icmp slt i32 %0, %1
-17 br i1 %cmp, label %for.body, label %for.end
+14 lid 0 = load i32, ptr lid i, align 4
+15 lid 1 = load i32, ptr lid b.addr, align 4
+16 lid cmp = icmp slt i32 lid 0, lid 1
+17 br i1 lid cmp, label lid for.body, label lid for.end
 18
 19 for.body:
-20 %2 = load i32, ptr %a.addr, align 4
-21 %3 = load i32, ptr %result, align 4
-22 %add = add nsw i32 %3, %2
-23 store i32 %add, ptr %result, align 4
-24 br label %for.inc
+20 lid 2 = load i32, ptr lid a.addr, align 4
+21 lid 3 = load i32, ptr lid result, align 4
+22 lid add = add nsw i32 lid 3, lid 2
+23 store i32 lid add, ptr lid result, align 4
+24 br label lid for.inc
 25
 26 for.inc:
-27 %4 = load i32, ptr %i, align 4
-28 %inc = add nsw i32 %4, 1
-29 store i32 %inc, ptr %i, align 4
-30 br label %for.cond
+27 lid 4 = load i32, ptr lid i, align 4
+28 lid inc = add nsw i32 lid 4, 1
+29 store i32 lid inc, ptr lid i, align 4
+30 br label lid for.cond
 31
 32 for.end:
-33 %5 = load i32, ptr %result, align 4
-34 ret i32 %5
+33 lid 5 = load i32, ptr lid result, align 4
+34 ret i32 lid 5
 35 }
 *)
 

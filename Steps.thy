@@ -53,7 +53,7 @@ lemma wp_restore_state_intro:
   assumes "rn = None   \<Longrightarrow> wp (ok (pop_frame s s')) Q"
   shows "wp (restore_state s s' rv rn) Q"
   using assms
-  unfolding wp_gen_def
+  unfolding wp_def
   by (cases rn; cases rv; simp)
 
 inductive
@@ -905,8 +905,8 @@ lemma wp_step_i_phi_intro[wp_step_i_intros]:
   shows "wp_rc_step_i (execi pre (p#ps,is,ter) s) Q"
 proof -
   obtain s' where "execute_phi pre p s = ok s'"
-    using assms unfolding wp_gen_def by (auto split: result.splits)
-  then have "Q (execi pre (ps,is,ter) s')" using assms unfolding wp_gen_def by simp
+    using assms unfolding wp_def by (auto split: result.splits)
+  then have "Q (execi pre (ps,is,ter) s')" using assms unfolding wp_def by simp
   then show ?thesis
     unfolding wp_rc_step_i_def using step_i_replaced_calls.simps \<open>execute_phi pre p s = ok s'\<close>
     by force
@@ -931,7 +931,7 @@ proof (cases "is_call i")
     prepok: "prepare_state s (params fu) p = ok sprep" and
     preholds: "fpre sprep" 
     using assms prems True
-    unfolding wp_gen_def
+    unfolding wp_def
     by (auto split: result.splits)
 
   obtain s'' v' s''' where
@@ -940,13 +940,13 @@ proof (cases "is_call i")
     si_eq: "si' = (execi pre ([],is,ter) s''')"
     using step True assms prepok preholds
     apply (cases rule: step_i_replaced_calls.cases; (simp del: split_paired_All))
-    unfolding wp_gen_def
+    unfolding wp_def
     apply (simp del: split_paired_All split: result.splits)
     by blast
 
   have "Q (execi pre ([],is,ter) s''')" 
     using step True assms prepok preholds postholds restok
-    unfolding wp_gen_def
+    unfolding wp_def
     apply (simp del: split_paired_All)
     apply (erule allE[where x=s''])
     by auto
@@ -956,8 +956,8 @@ proof (cases "is_call i")
 next
   case False
   then obtain s' where "execute_instruction i s = ok s'"
-    using assms unfolding wp_gen_def by (auto split: result.splits)
-  then have "Q (execi pre ([],is,ter) s')" using assms False unfolding wp_gen_def by simp
+    using assms unfolding wp_def by (auto split: result.splits)
+  then have "Q (execi pre ([],is,ter) s')" using assms False unfolding wp_def by simp
   then show ?thesis
     unfolding wp_rc_step_i_def using step_i_replaced_calls.simps \<open>execute_instruction i s = ok s'\<close> False prems
     by force \<comment> \<open> Takes a bit... \<close>

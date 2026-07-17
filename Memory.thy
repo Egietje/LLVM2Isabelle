@@ -222,29 +222,29 @@ lemma free_memory_\<alpha>:
 section "Intro rules"
 
 lemma wp_case_memory_value_intro[wp_intro]:
-  assumes "x = mem_unset \<Longrightarrow> wp_gen f Q E"
-  assumes "\<And>v. x = mem_val v \<Longrightarrow> wp_gen (g v) Q E"
-  assumes "x = mem_freed \<Longrightarrow> wp_gen h Q E"
-  shows "wp_gen (case x of mem_unset \<Rightarrow> f | mem_val v \<Rightarrow> g v | mem_freed \<Rightarrow> h) Q E"
+  assumes "x = mem_unset \<Longrightarrow> wp f Q"
+  assumes "\<And>v. x = mem_val v \<Longrightarrow> wp (g v) Q"
+  assumes "x = mem_freed \<Longrightarrow> wp h Q"
+  shows "wp (case x of mem_unset \<Rightarrow> f | mem_val v \<Rightarrow> g v | mem_freed \<Rightarrow> h) Q"
   using assms
   by (cases x; simp)
 
 
-lemma wp_get_single_memory_intro[THEN consequence, single_memory_intro]:
+lemma wp_get_single_memory_intro[THEN consequence, rotated -1, single_memory_intro]:
   assumes "valid_single_memory_address s a" "single_memory_\<alpha> s a \<noteq> Some mem_unset"
   shows "wp (get_single_memory s a) (\<lambda>x. single_memory_\<alpha> s a = Some (mem_val x))"
   using assms
   unfolding get_single_memory_def valid_single_memory_address_def single_memory_\<alpha>_def
   by (intro wp_intro; simp)
 
-lemma wp_get_memory_intro[THEN consequence, wp_intro]:
+lemma wp_get_memory_intro[THEN consequence, rotated -1, wp_intro]:
   assumes "valid_memory_address s a" "memory_\<alpha> s a \<noteq> Some mem_unset"
   shows "wp (get_memory s a) (\<lambda>x. memory_\<alpha> s a = Some (mem_val x))"
   using assms
   by (cases a; cases s; simp; intro single_memory_intro; simp add: single_memory_\<alpha>_def valid_single_memory_address_def split: if_splits)
 
 
-lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
+lemma wp_set_single_memory_intro[THEN consequence, rotated -1, single_memory_intro]:
   assumes "valid_single_memory_address s a"
   shows "wp (set_single_memory a v s) (\<lambda>s'. single_memory_\<alpha> s' = (single_memory_\<alpha> s)(a := Some (mem_val v)))"
   using assms
@@ -252,14 +252,14 @@ lemma wp_set_single_memory_intro[THEN consequence, single_memory_intro]:
   by (intro wp_intro wp_return_intro; simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def fun_eq_iff split: if_splits)
 
 
-lemma wp_set_memory_intro[THEN consequence, wp_intro]:
+lemma wp_set_memory_intro[THEN consequence, rotated -1, wp_intro]:
   assumes "valid_memory_address s a"
   shows "wp (set_memory a v s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)(a := Some (mem_val v)) \<and> register_\<alpha> s = register_\<alpha> s')"
   using assms 
   by (cases a; cases s; simp add: set_single_memory_def; intro wp_intro wp_return_intro; simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def fun_eq_iff split: if_splits; metis register_\<alpha>_eq)
 
 
-lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
+lemma wp_free_single_memory_intro[THEN consequence, rotated -1, single_memory_intro]:
   assumes "valid_single_memory_address s a"
   shows "wp (free_single_memory a s) (\<lambda>s'. (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some mem_freed))"
   using assms
@@ -267,38 +267,38 @@ lemma wp_free_single_memory_intro[THEN consequence, single_memory_intro]:
   apply (intro wp_intro wp_return_intro)
   by (auto simp: single_memory_\<alpha>_free valid_single_memory_address_def)
 
-lemma wp_free_memory_intro[THEN consequence, wp_intro]:
+lemma wp_free_memory_intro[THEN consequence, rotated -1, wp_intro]:
   assumes "valid_memory_address s (haddr a)"
   shows "wp (free_memory (haddr a) s) (\<lambda>s'. memory_\<alpha> s' = (memory_\<alpha> s)((haddr a) := Some mem_freed) \<and> register_\<alpha> s = register_\<alpha> s')"
   apply (cases s; simp)
   using assms
-   apply (intro wp_intro single_memory_intro wp_return_intro, auto)
+   apply (intro wp_intro single_memory_intro wp_return_intro, auto) defer
   using assms valid_memory_address.simps apply blast
    apply (rule ext)
   subgoal for _ _ _ _ _ _ _ a' by (cases a'; simp)
   done
 
 
-lemma wp_allocate_single_memory[THEN consequence, single_memory_intro]:
+lemma wp_allocate_single_memory[THEN consequence, rotated -1, single_memory_intro]:
   "wp (return (allocate_single_memory s)) (\<lambda>(s', a). (single_memory_\<alpha> s') = (single_memory_\<alpha> s)(a := Some mem_unset) \<and> single_memory_\<alpha> s a = None)"
   unfolding allocate_single_memory_def
   apply (intro wp_intro wp_return_intro; auto simp: single_memory_simps)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
 
-lemma wp_allocate_stack_intro[THEN consequence, wp_intro]:
+lemma wp_allocate_stack_intro[THEN consequence, rotated -1, wp_intro]:
   "wp (return (allocate_stack s)) (\<lambda>(s', a). (\<exists>a'. a = saddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_stack_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
-lemma wp_allocate_heap_intro[THEN consequence, wp_intro]:
+lemma wp_allocate_heap_intro[THEN consequence, rotated -1, wp_intro]:
   "wp (return (allocate_heap s)) (\<lambda>(s', a). (\<exists>a'. a = haddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_heap_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
   by (simp add: single_memory_\<alpha>_def valid_single_memory_address_def allocated_single_memory_address_def)
 
-lemma wp_allocate_global_intro[THEN consequence, wp_intro]:
+lemma wp_allocate_global_intro[THEN consequence, rotated -1, wp_intro]:
   "wp (return (allocate_global s)) (\<lambda>(s', a). (\<exists>a'. a = gaddr a') \<and> (memory_\<alpha> s') = (memory_\<alpha> s)(a := Some mem_unset) \<and> memory_\<alpha> s a = None \<and> register_\<alpha> s = register_\<alpha> s')"
   unfolding allocate_global_def allocate_single_memory_def
   apply (cases s; intro wp_intro wp_return_intro; auto)
